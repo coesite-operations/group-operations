@@ -74,7 +74,7 @@ export function tradingFleetNetworkSources({environment,config}){
    else if(tool.name==='base_fleet_observe'){
     const selection=Object.hasOwn(input,'tokens')?{tokens:input.tokens,sourceFleetRecords:[]}:await discoverObservedBaseTokens({directory:join(root,'evm','observations'),address:BASE_SPOT.address,maxTokens:BASE_SPOT.maximumObservedTokens});
     const account=verifyBaseSpotRecord(await base.readAccount({tokens:selection.tokens})),{id,...body}=account;
-    const observation={...body,tokenSelection:{method:Object.hasOwn(input,'tokens')?'explicit-request':'previously-witnessed-holdings',sourceFleetRecords:selection.sourceFleetRecords}};
+    const observation={...body,tokenSelection:{method:Object.hasOwn(input,'tokens')?'explicit-request':'current-indexer-and-previously-witnessed-holdings',sourceFleetRecords:selection.sourceFleetRecords,...(selection.discovery?{discovery:selection.discovery}:{}),fullWallet:false}};
     value=await persist('evm',{id:baseSpotRecordId(observation),...observation});
    }else if(tool.name==='base_fleet_reconcile')value=await recoverBase();
    else if(tool.name==='base_fleet_quote_native_usdc'){
