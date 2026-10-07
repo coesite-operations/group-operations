@@ -25,7 +25,7 @@ import { enactAgencyRecord, recordPower } from "@red-cup-engineering/organizing/
 import { moveOf, openingOf, ordinal, workArenaLawOf, WORK_ARENA_LAW_RECORD } from "@red-cup-engineering/organizing/enterprise";
 import { agencyRootOf } from "@red-cup-engineering/metroplat/offices";
 
-const DEPLOYMENTS = fileURLToPath(new URL("../../../deployments/", import.meta.url));
+const DEPLOYMENTS = process.env.METROPLAT_DEPLOYMENTS_ROOT ?? fileURLToPath(new URL("../../../deployments/", import.meta.url));
 const DEPLOYMENT = /^[a-z0-9][a-z0-9-]*$/;
 /** The section whose agency holds the arena's law record, and the office that adopts its editions. */
 export const LAW_SECTION = "emsenn/services/561-group/services/561-group-services-section";

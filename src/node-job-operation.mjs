@@ -7,7 +7,7 @@ import { openingOf } from "@red-cup-engineering/organizing/enterprise";
 import { nodeJobReadings, nodeJobSchedulesOf, nodeJobsOf, runNodeJob } from "@red-cup-engineering/node-job-service";
 
 // The Group's deployments, as released with this module.
-const DEPLOYMENTS = fileURLToPath(new URL("../../../deployments/", import.meta.url));
+const DEPLOYMENTS = process.env.METROPLAT_DEPLOYMENTS_ROOT ?? fileURLToPath(new URL("../../../deployments/", import.meta.url));
 const DEPLOYMENT = /^[a-z0-9][a-z0-9-]*$/;
 
 export const NODE_JOB_LAW = "A node runs each job its deployment declares from its released bytes, and each run ends in success.";
