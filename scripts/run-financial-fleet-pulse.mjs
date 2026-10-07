@@ -6,6 +6,7 @@ import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {researchPredictionMarketStrategy,observePredictionMarketStrategy,resolveProspectiveStrategyRows,studyProspectiveStrategy,createProspectiveProtocol,replayPredictionMarketStudy} from '@red-cup-engineering/mandate-portfolio-allocation-service/prediction-market-research';
 import {mkdirSync,chmodSync,readFileSync,statSync} from 'node:fs';
+import {readBaseFleetRecord} from '../src/base-record-store.mjs';
 import {tradingFleetNetworkSources} from '../src/trading-fleet-network.mjs';
 import {createSemanticRecordJournal} from '@red-cup-engineering/semiotic-eavt-services-section/record-semantic-record';
 
@@ -31,7 +32,17 @@ export async function runFinancialFleetPulse({environment=process.env,clock=()=>
   await Promise.all(calls.map(async([venue,tool,args])=>{
    try{
     const observed=await source.client.call(tool,args);
-    const receipt=custody.record({category:'venue-observation',record:{venue,tool,observed},recordedAt:clock(),told:{for:true,against:false}});
+    let journalObservation=observed;
+    if(venue==='base'){
+     if(observed.fleetRecord!==observed.id)throw new TypeError('native-persisted-base-observation-required');
+     const stored=await readBaseFleetRecord({directory:join(root,'evm','observations'),reference:observed.id});
+     const {venue:storedVenue,fleetRecord,...returned}=observed;
+     if(storedVenue!=='evm'||!isDeepStrictEqual(stored,returned))throw new TypeError('persisted-base-pulse-observation-mismatch');
+     const valuation=stored.quotedValue;
+     journalObservation={id:stored.id,type:stored.type,chainId:stored.chainId,address:stored.address,observedAt:stored.observedAt,boundary:stored.boundary,fullWallet:false,tokenBalances:stored.tokenBalances.length,tokenRefusals:stored.failures.length,...(valuation?{quotedValue:{quotedSubtotalUsdMicros:valuation.quotedSubtotalUsdMicros,quoted:valuation.quoted,unpriced:valuation.unpriced,unobserved:valuation.unobserved,currentEquityUsd:null,riskBooksEstablished:false,orderEffect:false}}:{}),completeObservationReference:stored.id};
+    }
+    const receipt=custody.record({category:'venue-observation',record:{venue,tool,observed:journalObservation},recordedAt:clock(),told:{for:true,against:false}});
+
     results[venue]={status:'observed',evidence:receipt.id,fleetRecord:observed.fleetRecord??null};
     if(observed.settlementAccounting)results[venue].settlements={verifiedPayouts:observed.settlementAccounting.records.filter(row=>row.payoutReconciled).length,payoutMismatches:observed.settlementAccounting.records.filter(row=>!row.payoutReconciled).length,refusals:observed.settlementAccounting.refusals.length,accountCashReconciled:false};
     if(venue==='base')results[venue].recovery=baseRecovery;
