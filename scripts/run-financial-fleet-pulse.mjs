@@ -29,6 +29,11 @@ export async function runFinancialFleetPulse({environment=process.env,clock=()=>
   catch(error){baseRecovery={status:'refused',reason:error.message};}
   const recoveryEvidence=custody.record({category:'venue-execution-observation',record:{venue:'base',tool:'base_fleet_reconcile',observed:baseRecovery},recordedAt:clock(),told:{for:true,against:false}}).id;
   baseRecovery={...baseRecovery,evidence:recoveryEvidence};
+  let kalshiRecovery;
+  try{kalshiRecovery=await source.client.call('kalshi_fleet_reconcile',{});}
+  catch(error){kalshiRecovery={status:'refused',reason:error.message};}
+  const kalshiRecoveryEvidence=custody.record({category:'venue-execution-observation',record:{venue:'kalshi',tool:'kalshi_fleet_reconcile',observed:kalshiRecovery},recordedAt:clock(),told:{for:true,against:false}}).id;
+  kalshiRecovery={...kalshiRecovery,evidence:kalshiRecoveryEvidence};
   await Promise.all(calls.map(async([venue,tool,args])=>{
    try{
     const observed=await source.client.call(tool,args);
@@ -46,9 +51,10 @@ export async function runFinancialFleetPulse({environment=process.env,clock=()=>
     results[venue]={status:'observed',evidence:receipt.id,fleetRecord:observed.fleetRecord??null};
     if(observed.settlementAccounting)results[venue].settlements={verifiedPayouts:observed.settlementAccounting.records.filter(row=>row.payoutReconciled).length,payoutMismatches:observed.settlementAccounting.records.filter(row=>!row.payoutReconciled).length,refusals:observed.settlementAccounting.refusals.length,accountCashReconciled:false};
     if(venue==='base')results[venue].recovery=baseRecovery;
+    if(venue==='kalshi')results[venue].recovery=kalshiRecovery;
    }catch(error){
     const receipt=custody.record({category:'venue-observation-refusal',record:{venue,tool,reason:error.message},recordedAt:clock(),told:{for:true,against:false}});
-    results[venue]={status:'refused',evidence:receipt.id,reason:error.message,...(venue==='base'?{recovery:baseRecovery}:{})};
+    results[venue]={status:'refused',evidence:receipt.id,reason:error.message,...(venue==='base'?{recovery:baseRecovery}:venue==='kalshi'?{recovery:kalshiRecovery}:{})};
    }
   }));
   if(!reference)results.alpaca={status:'not-configured',reason:'production-observation-grant-reference-absent'};
