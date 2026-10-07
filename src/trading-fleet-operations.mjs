@@ -1,4 +1,4 @@
-import {fileURLToPath} from 'node:url';
+import {join,isAbsolute} from 'node:path';
 import {runNodeJob} from '@red-cup-engineering/node-job-service';
 import {operation} from '@red-cup-engineering/computer-system-engine/rpc/operation';
 import {tradingFleetNetworkSources} from './trading-fleet-network.mjs';
@@ -29,5 +29,5 @@ export function tradingFleetOperations(){
    const [source]=tradingFleetNetworkSources({environment:process.env,config:{instance:{name:'561-financial-office'}}});
    try{return await source.client.call(tool,input??{});}finally{await source.client.close();}
   },
- })),operation({verb:'financial-fleet-pulse',inputFormat:'json',outputFormat:'json',summary:'Start or reuse the bounded financial fleet pulse from the running release. It observes venues, records research and runs the custody-bound Alpaca cycle. Existing venue mandates and validated decisions govern order effects; read outcomes through financial-fleet-evidence.',reads:['financial-fleet/observations'],writes:['financial-fleet/evidence'],effects:{class:'external',replay:'coordinated',coordination:'coordination-required',deterministic:'unmeasured',totality:'partial'},run:()=>runNodeJob({deploymentRoot:fileURLToPath(new URL('../../../deployments/cold-red-gate-host/',import.meta.url)),job:'financial-fleet-pulse'})})]);
+ })),operation({verb:'financial-fleet-pulse',inputFormat:'json',outputFormat:'json',summary:'Start or reuse the bounded financial fleet pulse from the running release. It observes venues, records research and runs the custody-bound Alpaca cycle. Existing venue mandates and validated decisions govern order effects; read outcomes through financial-fleet-evidence.',reads:['financial-fleet/observations'],writes:['financial-fleet/evidence'],effects:{class:'external',replay:'coordinated',coordination:'coordination-required',deterministic:'unmeasured',totality:'partial'},run:()=>{const artifact=process.env.GUIX_MACHINE_ARTIFACT;if(typeof artifact!=='string'||!isAbsolute(artifact))throw new TypeError('installed-machine-artifact-required');return runNodeJob({deploymentRoot:join(artifact,'deployments/cold-red-gate-host'),job:'financial-fleet-pulse'});}})]);
 }
