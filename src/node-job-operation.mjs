@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { operation } from "@red-cup-engineering/computer-system-engine/rpc/operation";
 import { openingOf } from "@red-cup-engineering/organizing/enterprise";
-import { nodeJobReadings, nodeJobSchedulesOf, nodeJobsOf, runNodeJob } from "@red-cup-engineering/node-runtime-release-promotion-service/job";
+import { nodeJobReadings, nodeJobSchedulesOf, nodeJobsOf, runNodeJob } from "@red-cup-engineering/node-job-service";
 
 // The Group's deployments, as released with this module.
 const DEPLOYMENTS = fileURLToPath(new URL("../../../deployments/", import.meta.url));

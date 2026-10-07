@@ -1,5 +1,5 @@
 import {fileURLToPath} from 'node:url';
-import {runNodeJob} from '@red-cup-engineering/node-runtime-release-promotion-service/job';
+import {runNodeJob} from '@red-cup-engineering/node-job-service';
 import {operation} from '@red-cup-engineering/computer-system-engine/rpc/operation';
 import {tradingFleetNetworkSources} from './trading-fleet-network.mjs';
 import {weatherNetworkSources,weatherTools} from './weather-network.mjs';

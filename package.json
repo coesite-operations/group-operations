@@ -26,7 +26,8 @@
     "@red-cup-engineering/semiotic-eavt-services-section": "workspace:*",
     "@red-cup-engineering/structural-claims-register-services-section": "workspace:*",
     "@red-cup-engineering/us-representation-services-section": "workspace:*",
-    "@red-cup-engineering/mandate-portfolio-allocation-service": "workspace:*"
+    "@red-cup-engineering/mandate-portfolio-allocation-service": "workspace:*",
+    "@red-cup-engineering/node-job-service": "workspace:*"
   },
   "exports": {
     ".": "./src/group-operations.mjs",
