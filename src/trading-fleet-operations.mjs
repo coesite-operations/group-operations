@@ -14,6 +14,7 @@ export function tradingFleetOperations(){
   ['base-fleet-reconcile','base_fleet_reconcile',false],
   ['base-fleet-quote-native-usdc','base_fleet_quote_native_usdc',false],
   ['base-fleet-prepare-native-usdc','base_fleet_prepare_native_usdc',false],
+  ['kalshi-fleet-reconcile','kalshi_fleet_reconcile',false],
   ['kalshi-fleet-observe','kalshi_fleet_observe',false],
   ['alpaca-live-observe','alpaca_live_observe',false],
   ['alpaca-live-run-fleet-cycle','alpaca_live_run_fleet_cycle',true],

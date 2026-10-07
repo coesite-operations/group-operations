@@ -1,3 +1,4 @@
+import {reconcileDeskOrderEffects} from '@red-cup-engineering/kalshi-services-section/desk-order-recovery';
 import {persistBaseFleetRecord,readBaseFleetRecord,readBaseFleetRecordWindow} from './base-record-store.mjs';
 import {discoverObservedBaseTokens} from './base-observed-tokens.mjs';
 import {reconcileSettlementPayout} from '@red-cup-engineering/kalshi-services-section/settlement-accounting';
@@ -20,6 +21,7 @@ const venueTools=Object.freeze([
  {name:'base_fleet_reconcile',description:'Recover the existing 0x224 pending transaction by its original hash, canonical finalized receipt and recorded outcome. No signing or broadcast. Exact finalized ETH/USDC/WETH quantities and receipt fees must reconcile before effect custody clears. USD profit remains unclaimed without cost basis.',inputSchema:empty},
  {name:'base_fleet_quote_native_usdc',description:'Observe an executable native ETH to native USDC Uniswap quote for 0x224 at one block. Persist the quote; no signing or venue write.',inputSchema:{type:'object',properties:{amountInWei:{type:'string',pattern:'^[0-9]{1,78}$'},fee:{type:'integer',enum:[100,500,3000,10000]}},required:['amountInWei'],additionalProperties:false}},
  {name:'base_fleet_prepare_native_usdc',description:'Prepare a recorded native ETH to USDC quote with fixed-block simulation and rollup fee reserves. Returns an unsigned transaction; current mandate admission and pending nonce checks remain required.',inputSchema:{type:'object',properties:{quoteReference:{type:'string',pattern:'^ni:///sha-256;[A-Za-z0-9_-]{43}$'},minimumOutputAtomic:{type:'string',pattern:'^[0-9]{1,78}$'},deadline:{type:'integer'}},required:['quoteReference','minimumOutputAtomic','deadline'],additionalProperties:false}},
+ {name:'kalshi_fleet_reconcile',description:'Reconcile the original pending Kalshi order under the live desk lock. Record its original acknowledgement without new placement, cancellation or arming.',inputSchema:empty},
  {name:'kalshi_fleet_observe',description:'Read and persist Kalshi balance, positions, resting orders, fills and settlements through its existing signer-host client.',inputSchema:empty},
 ]);
 
@@ -71,6 +73,7 @@ export function tradingFleetNetworkSources({environment,config}){
    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!Object.hasOwn(tool.inputSchema.properties,key)))throw new TypeError('exact-fleet-read-arguments-required');
    let value;
    if(tool.name==='base_fleet_read_record')value=await readBaseFleetRecordWindow({directory:join(root,'evm','observations'),...input});
+   else if(tool.name==='kalshi_fleet_reconcile')value=await reconcileDeskOrderEffects({env:environment});
    else if(tool.name==='base_fleet_observe'){
     const selection=Object.hasOwn(input,'tokens')?{tokens:input.tokens,sourceFleetRecords:[]}:await discoverObservedBaseTokens({directory:join(root,'evm','observations'),address:BASE_SPOT.address,maxTokens:BASE_SPOT.maximumObservedTokens});
     const account=verifyBaseSpotRecord(await base.readAccount({tokens:selection.tokens})),{id,...body}=account;
