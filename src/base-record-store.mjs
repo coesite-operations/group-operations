@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {constants} from 'node:fs';
-import {mkdir,open,writeFile,readFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {mkdir,open,writeFile,readFile,lstat} from 'node:fs/promises';
+import {join,isAbsolute} from 'node:path';
 import {verifyBaseSpotRecord} from '@red-cup-engineering/pluggable-venue-adapter-service/base-spot';
 const key=reference=>{if(typeof reference!=='string'||!/^ni:\/\/\/sha-256;[A-Za-z0-9_-]{43}$/.test(reference))throw new TypeError('native-base-record-reference-required');return createHash('sha256').update(reference).digest('hex');};
 /** Native semantic identity is the lookup key. A filename is only its encoding. */
@@ -13,11 +13,20 @@ export async function persistBaseFleetRecord({directory,record}){
  return {...body,fleetRecord:record.id};
 }
 export async function readBaseFleetRecord({directory,reference}){
- const handle=await open(join(directory,key(reference)+'.json'),constants.O_RDONLY|constants.O_NOFOLLOW);
+ if(!isAbsolute(directory??''))throw new TypeError('absolute-base-record-directory-required');
+ const root=await lstat(directory);
+ if(!root.isDirectory()||root.uid!==process.getuid()||(root.mode&0o022)!==0)throw new TypeError('owned-base-record-directory-required');
+ const handle=await open(join(directory,key(reference)+'.json'),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
  try{
-  const info=await handle.stat();if(!info.isFile()||info.size>1048576||(info.mode&0o077)!==0||info.uid!==process.getuid())throw new TypeError('bounded-private-base-record-required');
-  const bytes=Buffer.alloc(info.size+1),{bytesRead}=await handle.read(bytes,0,bytes.length,0);if(bytesRead!==info.size)throw new TypeError('base-record-changed-during-read');
-  const serialized=bytes.subarray(0,bytesRead).toString('utf8'),stored=JSON.parse(serialized),{venue,...record}=stored;
+  const info=await handle.stat({bigint:true});
+  if(!info.isFile()||info.size>1048576n||(info.mode&0o077n)!==0n||info.uid!==BigInt(process.getuid()))throw new TypeError('bounded-private-base-record-required');
+  const bytes=Buffer.alloc(Number(info.size)+1);let bytesRead=0;
+  while(bytesRead<bytes.length){const chunk=await handle.read(bytes,bytesRead,bytes.length-bytesRead,bytesRead);if(chunk.bytesRead===0)break;bytesRead+=chunk.bytesRead;}
+  const after=await handle.stat({bigint:true});
+  if(BigInt(bytesRead)!==info.size||after.size!==info.size||after.mtimeNs!==info.mtimeNs||after.ctimeNs!==info.ctimeNs||after.mode!==info.mode||after.uid!==info.uid)throw new TypeError('base-record-changed-during-read');
+  const serialized=bytes.subarray(0,bytesRead).toString('utf8');let stored;
+  try{stored=JSON.parse(serialized);}catch{throw new TypeError('base-record-json-invalid');}
+  const {venue,...record}=stored;
   if(venue!=='evm'||record.id!==reference||serialized!==JSON.stringify(stored)+'\n')throw new TypeError('native-base-record-identity-mismatch');
   return verifyBaseSpotRecord(record);
  }finally{await handle.close();}

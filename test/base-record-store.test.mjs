@@ -1,6 +1,7 @@
+import {execFileSync} from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,readdir,readFile,writeFile} from 'node:fs/promises';
+import {mkdtemp,rm,readdir,readFile,writeFile,chmod,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -28,4 +29,24 @@ test('historical wrapper-addressed observations retain witnessed holdings withou
   assert.equal((await discoverObservedBaseTokens({directory,address:body.address,maxTokens:128})).tokens.length,1);
   await assert.rejects(readBaseFleetRecord({directory,reference:id}),{code:'ENOENT'});
  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test('private Base custody refuses FIFOs, public records and symlinked or writable roots', {timeout:5000}, async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'base-private-custody-'));
+ const reference='ni:///sha-256;AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+ const file=join(directory,createHash('sha256').update(reference).digest('hex')+'.json');
+ const alias=directory+'-alias';
+ try{
+  execFileSync('mkfifo',['-m','600',file]);
+  await assert.rejects(readBaseFleetRecord({directory,reference}),/bounded-private-base-record-required/);
+  await rm(file);
+  await writeFile(file,'{}\n',{mode:0o644});
+  await assert.rejects(readBaseFleetRecord({directory,reference}),/bounded-private-base-record-required/);
+  await chmod(file,0o600);await writeFile(file,'{"private-account-fragment":');
+  await assert.rejects(readBaseFleetRecord({directory,reference}),/base-record-json-invalid/);
+  await symlink(directory,alias);
+  await assert.rejects(readBaseFleetRecord({directory:alias,reference}),/owned-base-record-directory-required/);
+  await chmod(directory,0o720);
+  await assert.rejects(readBaseFleetRecord({directory,reference}),/owned-base-record-directory-required/);
+ }finally{await chmod(directory,0o700);await rm(alias,{force:true});await rm(directory,{recursive:true,force:true});}
 });
