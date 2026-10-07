@@ -1,0 +1,55 @@
+{
+  "bin": {
+    "group-produce-financial-readout": "scripts/produce-group-financial-readout.mjs",
+    "group-reconcile-books-with-chain": "scripts/reconcile-books-with-chain.mjs"
+  },
+  "dependencies": {
+    "@red-cup-engineering/activitypub-services-section": "workspace:*",
+    "@red-cup-engineering/brokerage-control-api-federation": "workspace:*",
+    "@red-cup-engineering/computer-code-development-engine": "workspace:*",
+    "@red-cup-engineering/computer-data-engineering-services-section": "workspace:*",
+    "@red-cup-engineering/computer-inference-engine": "workspace:*",
+    "@red-cup-engineering/computer-system-engine": "workspace:*",
+    "@red-cup-engineering/ethereum-engineering-services-section": "workspace:*",
+    "@red-cup-engineering/farolfi": "workspace:*",
+    "@red-cup-engineering/heir-search-services-section": "workspace:*",
+    "@red-cup-engineering/hive-auto-ledger-cli": "workspace:*",
+    "@red-cup-engineering/http-services-section": "workspace:*",
+    "@red-cup-engineering/kalshi-services-section": "workspace:*",
+    "@red-cup-engineering/land-contracts-services-section": "workspace:*",
+    "@red-cup-engineering/mcp-engineering-services-section": "workspace:*",
+    "@red-cup-engineering/metroplat": "workspace:*",
+    "@red-cup-engineering/metroplat-operations-console": "workspace:*",
+    "@red-cup-engineering/node-runtime-release-promotion-service": "workspace:*",
+    "@red-cup-engineering/organizing": "workspace:*",
+    "@red-cup-engineering/pluggable-venue-adapter-service": "workspace:*",
+    "@red-cup-engineering/semiotic-eavt-services-section": "workspace:*",
+    "@red-cup-engineering/structural-claims-register-services-section": "workspace:*",
+    "@red-cup-engineering/us-representation-services-section": "workspace:*",
+    "@red-cup-engineering/mandate-portfolio-allocation-service": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/group-operations.mjs",
+    "./group-financial-readout": "./src/group-financial-readout.mjs",
+    "./group-operations": "./src/group-operations.mjs",
+    "./group-financial-readout-view": "./src/group-financial-readout-view.mjs",
+    "./network": "./src/network.mjs",
+    "./scripts/produce-group-financial-readout": "./scripts/produce-group-financial-readout.mjs",
+    "./group-financial-readout-operation": "./src/group-financial-readout-operation.mjs",
+    "./group-enterprise-operations": "./src/group-enterprise-operations.mjs",
+    "./group-business-readout": "./src/group-business-readout.mjs",
+    "./node-release-operation": "./src/node-release-operation.mjs",
+    "./node-job-operation": "./src/node-job-operation.mjs",
+    "./work-arena-law-operation": "./src/work-arena-law-operation.mjs",
+    "./trading-fleet-network": "./src/trading-fleet-network.mjs",
+    "./trading-fleet-operations": "./src/trading-fleet-operations.mjs",
+    "./weather-network": "./src/weather-network.mjs"
+  },
+  "name": "@561-group/group-operations",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "devDependencies": {
+    "@red-cup-engineering/gaming": "workspace:*"
+  }
+}
