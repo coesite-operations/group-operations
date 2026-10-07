@@ -43,7 +43,7 @@ export async function runFinancialFleetPulse({environment=process.env,clock=()=>
   if(!reference)results.alpaca={status:'not-configured',reason:'production-observation-grant-reference-absent'};
   let alpacaExecution;
   try{alpacaExecution=await source.client.call('alpaca_live_run_fleet_cycle',{});}
-  catch(error){alpacaExecution={status:'refused',reason:error.message,executionAttempted:true,tradeEffects:null};}
+  catch(error){alpacaExecution={status:'refused',reason:error.message,executionAttempted:null,tradeEffects:null};}
   const executionEvidence=custody.record({category:'venue-execution-observation',record:{venue:'alpaca',tool:'alpaca_live_run_fleet_cycle',observed:alpacaExecution},recordedAt:clock(),told:{for:true,against:false}}).id;
   results.alpaca.execution={...alpacaExecution,evidence:executionEvidence};
   const at=clock(),request={market:'KXFED-26OCT-T4.25',roundTripCostFraction:0.005};

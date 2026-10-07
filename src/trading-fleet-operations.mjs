@@ -15,6 +15,7 @@ export function tradingFleetOperations(){
   ['base-fleet-prepare-native-usdc','base_fleet_prepare_native_usdc',false],
   ['kalshi-fleet-observe','kalshi_fleet_observe',false],
   ['alpaca-live-observe','alpaca_live_observe',false],
+  ['alpaca-live-run-fleet-cycle','alpaca_live_run_fleet_cycle',true],
   ['alpaca-live-execution-readiness','alpaca_live_execution_readiness',false],
   ['alpaca-live-execute-intent','alpaca_live_execute_intent',true],
   ['alpaca-live-execute-market-decision','alpaca_live_execute_market_decision',true],
@@ -27,5 +28,5 @@ export function tradingFleetOperations(){
    const [source]=tradingFleetNetworkSources({environment:process.env,config:{instance:{name:'561-financial-office'}}});
    try{return await source.client.call(tool,input??{});}finally{await source.client.close();}
   },
- })),operation({verb:'financial-fleet-pulse',inputFormat:'json',outputFormat:'json',summary:'Start or reuse the bounded financial fleet observation job from the running release. Read resulting observations and studies through financial-fleet-evidence; no trading effect.',reads:['financial-fleet/observations'],writes:['financial-fleet/evidence'],effects:{class:'external',replay:'coordinated',coordination:'coordination-required',deterministic:'unmeasured',totality:'partial'},run:()=>runNodeJob({deploymentRoot:fileURLToPath(new URL('../../../deployments/cold-red-gate-host/',import.meta.url)),job:'financial-fleet-pulse'})})]);
+ })),operation({verb:'financial-fleet-pulse',inputFormat:'json',outputFormat:'json',summary:'Start or reuse the bounded financial fleet pulse from the running release. It observes venues, records research and runs the custody-bound Alpaca cycle. Existing venue mandates and validated decisions govern order effects; read outcomes through financial-fleet-evidence.',reads:['financial-fleet/observations'],writes:['financial-fleet/evidence'],effects:{class:'external',replay:'coordinated',coordination:'coordination-required',deterministic:'unmeasured',totality:'partial'},run:()=>runNodeJob({deploymentRoot:fileURLToPath(new URL('../../../deployments/cold-red-gate-host/',import.meta.url)),job:'financial-fleet-pulse'})})]);
 }
