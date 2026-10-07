@@ -22,3 +22,13 @@ export async function readBaseFleetRecord({directory,reference}){
   return verifyBaseSpotRecord(record);
  }finally{await handle.close();}
 }
+
+/** Bounded private replay of an already retained, verified native record. */
+export async function readBaseFleetRecordWindow({directory,reference,offset=0,limit=32768}){
+ if(!Number.isSafeInteger(offset)||offset<0||offset>1048576||!Number.isSafeInteger(limit)||limit<1||limit>32768)throw new TypeError('bounded-base-record-window-required');
+ const record=await readBaseFleetRecord({directory,reference});
+ const bytes=Buffer.from(JSON.stringify(record));
+ if(offset>bytes.length)throw new TypeError('base-record-window-outside-artifact');
+ const chunk=bytes.subarray(offset,offset+limit);
+ return {reference:record.id,mediaType:'application/json',offset,returnedBytes:chunk.length,totalBytes:bytes.length,bytesBase64:chunk.toString('base64'),complete:offset+chunk.length===bytes.length,artifactId:'ni:///sha-256;'+createHash('sha256').update(bytes).digest('base64url'),accountRecord:true,orderEffect:false};
+}

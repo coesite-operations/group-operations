@@ -1,4 +1,4 @@
-import {persistBaseFleetRecord,readBaseFleetRecord} from './base-record-store.mjs';
+import {persistBaseFleetRecord,readBaseFleetRecord,readBaseFleetRecordWindow} from './base-record-store.mjs';
 import {discoverObservedBaseTokens} from './base-observed-tokens.mjs';
 import {reconcileSettlementPayout} from '@red-cup-engineering/kalshi-services-section/settlement-accounting';
 import {readDeskAuthority} from '@red-cup-engineering/kalshi-services-section/desk-authority';
@@ -15,6 +15,7 @@ import {createSemanticRecordJournal} from '@red-cup-engineering/semiotic-eavt-se
 import {createKalshiClient} from '@red-cup-engineering/kalshi-services-section/client';
 const empty={type:'object',properties:{},additionalProperties:false};
 const venueTools=Object.freeze([
+ {name:'base_fleet_read_record',description:'Read at most 32768 exact bytes of one retained private Base account, quote or unsigned preparation record. Verifies its native identity; no fresh observation, signing or trade authority.',inputSchema:{type:'object',properties:{reference:{type:'string',pattern:'^ni:///sha-256;[A-Za-z0-9_-]{43}$'},offset:{type:'integer',minimum:0,maximum:1048576},limit:{type:'integer',minimum:1,maximum:32768}},required:['reference'],additionalProperties:false}},
  {name:'base_fleet_observe',description:'Read native ETH, WETH, native USDC and up to 128 declared ERC-20 balances at one fixed block. Coverage remains explicitly partial and unvalued. No signing.',inputSchema:{type:'object',properties:{tokens:{type:'array',maxItems:BASE_SPOT.maximumObservedTokens,uniqueItems:true,items:{type:'string',pattern:'^0x[0-9a-fA-F]{40}$'}}},additionalProperties:false}},
  {name:'base_fleet_reconcile',description:'Recover the existing 0x224 pending transaction by its original hash, canonical finalized receipt and recorded outcome. No signing or broadcast. Exact finalized ETH/USDC/WETH quantities and receipt fees must reconcile before effect custody clears. USD profit remains unclaimed without cost basis.',inputSchema:empty},
  {name:'base_fleet_quote_native_usdc',description:'Observe an executable native ETH to native USDC Uniswap quote for 0x224 at one block. Persist the quote; no signing or venue write.',inputSchema:{type:'object',properties:{amountInWei:{type:'string',pattern:'^[0-9]{1,78}$'},fee:{type:'integer',enum:[100,500,3000,10000]}},required:['amountInWei'],additionalProperties:false}},
@@ -69,7 +70,8 @@ export function tradingFleetNetworkSources({environment,config}){
    const input=message.params.arguments??{};
    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!Object.hasOwn(tool.inputSchema.properties,key)))throw new TypeError('exact-fleet-read-arguments-required');
    let value;
-   if(tool.name==='base_fleet_observe'){
+   if(tool.name==='base_fleet_read_record')value=await readBaseFleetRecordWindow({directory:join(root,'evm','observations'),...input});
+   else if(tool.name==='base_fleet_observe'){
     const selection=Object.hasOwn(input,'tokens')?{tokens:input.tokens,sourceFleetRecords:[]}:await discoverObservedBaseTokens({directory:join(root,'evm','observations'),address:BASE_SPOT.address,maxTokens:BASE_SPOT.maximumObservedTokens});
     const account=verifyBaseSpotRecord(await base.readAccount({tokens:selection.tokens})),{id,...body}=account;
     const observation={...body,tokenSelection:{method:Object.hasOwn(input,'tokens')?'explicit-request':'previously-witnessed-holdings',sourceFleetRecords:selection.sourceFleetRecords}};
