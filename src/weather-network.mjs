@@ -1,8 +1,9 @@
 import { createMcpClient, mcpInProcessTransport } from '@red-cup-engineering/mcp-engineering-services-section/client';
-import { weatherRoot, allocateLiveWeather, weatherEvidence, weatherIndexEvidence, weatherStationEvidence, weatherStationSkill, weatherStatus, triggerWeatherCycle, scoreWeather, admitWeatherModel } from '@red-cup-engineering/kalshi-services-section/weather-engine';
+import { weatherEcmwfEvidence, weatherRoot, allocateLiveWeather, weatherEvidence, weatherIndexEvidence, weatherStationEvidence, weatherStationSkill, weatherStatus, triggerWeatherCycle, scoreWeather, admitWeatherModel } from '@red-cup-engineering/kalshi-services-section/weather-engine';
 const empty={type:'object',properties:{},additionalProperties:false};
 const money={type:'number',minimum:0,maximum:100000000};
 export const weatherTools=[
+ {name:'weather_ecmwf_evidence',description:'Collect a complete 51-member ECMWF AIFS ENS v2 2m-temperature ensemble at 1..4 future six-hour slots for verified NWS station coordinates. Retain indexed GRIB2 fields and their real receipt clocks; preserve member/site/time identities and four grid-corner projection witnesses. Publish experimental marginal laws in existing prospective station science. No interpolation, daily-extreme projection, venue admission or orders.',inputSchema:{type:'object',properties:{stations:{type:'array',minItems:1,maxItems:16,items:{type:'object',properties:{station:{type:'string',pattern:'^[A-Z0-9]{4}$'},timeZone:{type:'string'}},required:['station','timeZone'],additionalProperties:false}},validCount:{type:'integer',minimum:1,maximum:4}},required:['stations'],additionalProperties:false}},
  {name:'weather_status',description:'Read live Kalshi weather coverage, missing forecast capabilities, and settlement-scored model skill on Cold Red Gate.',inputSchema:empty},
  {name:'weather_cycle',description:'Start a persistent weather cycle on Cold Red Gate: discover live contracts, collect evidence, forecast and score. Returns immediately; weather_status reads progress and result. No orders.',inputSchema:empty},
  {name:'weather_forecast',description:'Read one contract: exact rules, source, each model probability, contradictory SignCell evidence and validation.',inputSchema:{type:'object',properties:{ticker:{type:'string',maxLength:120}},required:['ticker'],additionalProperties:false}},
@@ -28,7 +29,8 @@ export function weatherNetworkSources({environment=process.env,config}) {
    const tool=weatherTools.find(t=>t.name===m.params?.name),args=m.params?.arguments??{};
    if(!tool||!args||typeof args!=='object'||Array.isArray(args)||Object.keys(args).some(k=>!Object.hasOwn(tool.inputSchema.properties,k))||(tool.inputSchema.required??[]).some(k=>args[k]===undefined))throw new TypeError('exact weather tool arguments required');
    let value;
-   if(tool.name==='weather_station_skill')value=await weatherStationSkill({root,...args});
+   if(tool.name==='weather_ecmwf_evidence')value=await weatherEcmwfEvidence({root,...args});
+   else if(tool.name==='weather_station_skill')value=await weatherStationSkill({root,...args});
    else if(tool.name==='weather_index_evidence')value=await weatherIndexEvidence({root,...args});
    else if(tool.name==='weather_station_evidence')value=await weatherStationEvidence({root,...args});
    else if(tool.name==='weather_evidence')value=await weatherEvidence({root,...args});
