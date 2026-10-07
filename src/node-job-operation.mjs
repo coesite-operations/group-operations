@@ -105,7 +105,7 @@ export function nodeJobOperations(binding, { home, deployments = DEPLOYMENTS } =
         deploymentRoot: deploymentRootOf(deployments, input?.deployment),
         job: input?.job,
         // A job holding working-tree custody writes the node's own declared working tree.
-        ...(binding?.repositoryRoot === undefined ? {} : { workingTree: binding.repositoryRoot }),
+        ...(binding?.repositoryRoot === undefined ? {} : { workingTree: process.env.METROPLAT_CODEX_WORKSPACE ?? binding.repositoryRoot }),
         ...(home === undefined ? {} : { home }),
         ...(binding?.now === undefined ? {} : { now: () => new Date(binding.now()) }),
       }),
