@@ -18,8 +18,8 @@ export function groupFinancialReadoutOperation({ environment = process.env, cloc
     verb: "group-financial-readout-produce", inputFormat: "json", outputFormat: "json",
     summary: "Produce the 561 Group's daily financial readout.",
     description: "Reads Group financial inputs, writes the dated author-node readout, and delivers its addressed SignCell evidence to the configured peer.",
-    reads: ["METROPLAT_WEB_DATA_DIR", "METROPLAT_LEDGER_JOURNAL", "X402_SETTLEMENT_RECORDS", "X402_SECRETS_FILE", "GROUP_PEER_ACTOR"],
-    writes: ["group-financial-readout"],
+    reads: ["METROPLAT_DATA_ROOT", "METROPLAT_WEB_DATA_DIR", "METROPLAT_LEDGER_JOURNAL", "GROUP_WALLET_REGISTRY", "METROPLAT_AGENCY_ROOT", "X402_SECRETS_FILE", "GROUP_PEER_ACTOR"],
+    writes: ["group-financial-readout", "x402-cash-projection", "group-judged-deliveries"],
     effects: { class: "external", replay: "coordinated", coordination: "coordination-free", deterministic: "unmeasured", totality: "partial" },
     run: () => produceAndFederate({ environment, clock }),
   });
