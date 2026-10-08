@@ -12,7 +12,7 @@ import { balance, balanceAt, isTransaction, open, posting, transaction } from "@
 import { printEntries } from "@red-cup-engineering/organizing/accounting/report";
 import { DECREASE_ACCOUNT, INCREASE_ACCOUNT, deriveSetOfCandidateTransactions } from "@red-cup-engineering/farolfi/ledger/maintenance/candidate-transactions";
 import { classesByMovement } from "./chain-classification.mjs";
-import { gradedNegate, gradedOfDecimal, gradedSign, gradedSubtract, gradedToDecimalString, gradedIsZero } from "@red-cup-engineering/computer-data-engineering-services-section/number/graded";
+import { gradedNegate, gradedOfDecimal, gradedSign, gradedSubtract, gradedToDecimalString, gradedIsZero } from "@red-cup-engineering/exact-number-data-service/graded";
 
 const BALANCE = /^(\d{4}-\d{2}-\d{2}) balance (\S+)\s+(-?[\d.]+)\s+(\S+)/u;
 const META = /^\s+([a-z_]+):\s+"([^"]*)"/u;

@@ -6,7 +6,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { gradedIsZero, gradedToDecimalString } from "@red-cup-engineering/computer-data-engineering-services-section/number/graded";
+import { gradedIsZero, gradedToDecimalString } from "@red-cup-engineering/exact-number-data-service/graded";
 
 /** The commodities the Group counts money in. */
 export const MONEY = Object.freeze(["USD", "USDC"]);
