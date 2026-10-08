@@ -1,3 +1,4 @@
+import {readFinancialFleetEvidence} from './financial-fleet-evidence.mjs';
 import {reconcileDeskOrderEffects} from '@red-cup-engineering/kalshi-services-section/desk-order-recovery';
 import {persistBaseFleetRecord,readBaseFleetRecord,readBaseFleetRecordWindow} from './base-record-store.mjs';
 import {discoverObservedBaseTokens} from './base-observed-tokens.mjs';
@@ -19,6 +20,7 @@ import {createSemanticRecordJournal} from '@red-cup-engineering/semiotic-eavt-se
 import {createKalshiClient} from '@red-cup-engineering/kalshi-services-section/client';
 const empty={type:'object',properties:{},additionalProperties:false};
 const venueTools=Object.freeze([
+ {name:'financial_fleet_evidence',description:'Read retained content-addressed financial fleet observations, outcomes and prospective research. Replay one recorded historical study with category market-study, limit 1, replay true. Replay establishes reproducibility, not independent acceptance or trading authority.',inputSchema:{type:'object',properties:{category:{type:'string'},id:{type:'string',pattern:'^ni:///sha-256;[A-Za-z0-9_-]{43}$'},limit:{type:'integer',minimum:1,maximum:50},replay:{type:'boolean'}},additionalProperties:false}},
  {name:'base_fleet_read_record',description:'Read at most 32768 exact bytes of one retained private Base account, quote or unsigned preparation record. Verifies its native identity; no fresh observation, signing or trade authority.',inputSchema:{type:'object',properties:{reference:{type:'string',pattern:'^ni:///sha-256;[A-Za-z0-9_-]{43}$'},offset:{type:'integer',minimum:0,maximum:1048576},limit:{type:'integer',minimum:1,maximum:32768}},required:['reference'],additionalProperties:false}},
  {name:'base_fleet_observe',description:'Observe current YANAGI balances, ERC-20 holdings, vaults and staking boosts through the treasury observer; safe/finalized state is available when requested. Explicit token requests and previously witnessed holdings are rechecked on chain. Retain full evidence and return a compact summary; USD books and NFT coverage remain incomplete. No signing.',inputSchema:{type:'object',properties:{finality:{type:'string',enum:['latest','safe','finalized']},tokens:{type:'array',maxItems:BASE_SPOT.maximumObservedTokens,uniqueItems:true,items:{type:'string',pattern:'^0x[0-9a-fA-F]{40}$'}}},additionalProperties:false}},
  {name:'base_fleet_reconcile',description:'Recover the existing 0x224 pending transaction by its original hash, canonical finalized receipt and recorded outcome. No signing or broadcast. Exact finalized ETH/USDC/WETH quantities and receipt fees must reconcile before effect custody clears. USD profit remains unclaimed without cost basis.',inputSchema:empty},
@@ -75,7 +77,8 @@ export function tradingFleetNetworkSources({environment,config}){
    const input=message.params.arguments??{};
    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!Object.hasOwn(tool.inputSchema.properties,key)))throw new TypeError('exact-fleet-read-arguments-required');
    let value;
-   if(tool.name==='base_fleet_read_record')value=await readBaseFleetRecordWindow({directory:join(root,'evm','observations'),...input});
+   if(tool.name==='financial_fleet_evidence')value=readFinancialFleetEvidence({...input,environment});
+   else if(tool.name==='base_fleet_read_record')value=await readBaseFleetRecordWindow({directory:join(root,'evm','observations'),...input});
    else if(tool.name==='base_fleet_observe'){
     if(Object.hasOwn(input,'tokens')&&(!Array.isArray(input.tokens)||input.tokens.length>BASE_SPOT.maximumObservedTokens||input.tokens.some(token=>typeof token!=='string'||!/^0x[0-9a-fA-F]{40}$/.test(token))||new Set(input.tokens.map(token=>token.toLowerCase())).size!==input.tokens.length))throw new TypeError('bounded-unique-base-token-request-required');
     const selection=Object.hasOwn(input,'tokens')?{tokens:input.tokens,sourceFleetRecords:[],explicit:true}:await discoverObservedBaseTokens({directory:join(root,'evm','observations'),address:BASE_SPOT.address,maxTokens:BASE_SPOT.maximumObservedTokens});
