@@ -26,12 +26,14 @@ test('portfolio pulse keeps full evidence in native custody and refuses a change
   const full=await persistBaseFleetRecord({directory:join(root,'evm','observations'),record:{id:baseSpotRecordId(body),...body}});
   const {portfolio,...compact}=full;
   for(const changed of [false,true]){
-   const rows=[];
-   const client={async call(tool){if(tool==='base_fleet_observe_portfolio')return changed?{...compact,summary:{...compact.summary,riskBooksEstablished:true}}:compact;if(tool==='alpaca_live_run_fleet_cycle')return {status:'not-configured',tradeEffects:false};return {};},async close(){}};
+   const rows=[],calls=[];
+   const client={async call(tool){calls.push(tool);if(tool==='base_fleet_observe')return changed?{...compact,summary:{...compact.summary,riskBooksEstablished:true}}:compact;if(tool==='alpaca_live_run_fleet_cycle')return {status:'not-configured',tradeEffects:false};return {};},async close(){}};
    const result=await runFinancialFleetPulse({environment:{TRADING_FLEET_STATE_DIR:root},sources:()=>[{client}],journal:{record(row){rows.push(row);return {id:'fixture-'+rows.length};},query(){return [];}},research:async()=>{throw Error('no-study');},prospective:async()=>{throw Error('no-prospective-data');}});
-   assert.equal(result.venues.base.portfolio.status,changed?'refused':'observed');
+   assert.equal(result.venues.base.status,changed?'refused':'observed');
+   assert.equal(calls.filter(tool=>tool==='base_fleet_observe').length,1);
+   assert.equal(calls.includes('base_fleet_observe_portfolio'),false);
    assert.equal(result.tradeEffects,false);assert.equal(result.forecastConfidenceEstablished,false);
-   if(!changed){const witness=rows.find(row=>row.record.tool==='base_fleet_observe_portfolio');assert.equal(witness.record.observed.completeObservationReference,full.id);assert.equal(Object.hasOwn(witness.record.observed,'portfolio'),false);assert.equal(witness.record.observed.summary.riskBooksEstablished,false);}
+   if(!changed){const witness=rows.find(row=>row.record.tool==='base_fleet_observe');assert.equal(witness.record.observed.completeObservationReference,full.id);assert.equal(Object.hasOwn(witness.record.observed,'portfolio'),false);assert.equal(witness.record.observed.summary.riskBooksEstablished,false);}
   }
  }finally{await rm(root,{recursive:true,force:true});}
 });

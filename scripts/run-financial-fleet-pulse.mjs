@@ -39,39 +39,23 @@ export async function runFinancialFleetPulse({environment=process.env,clock=()=>
     const observed=await source.client.call(tool,args);
     let journalObservation=observed;
     if(venue==='base'){
-     if(observed.fleetRecord!==observed.id)throw new TypeError('native-persisted-base-observation-required');
      const stored=await readBaseFleetRecord({directory:join(root,'evm','observations'),reference:observed.id});
+     const {portfolio,...compact}=stored;
      const {venue:storedVenue,fleetRecord,...returned}=observed;
-     if(storedVenue!=='evm'||!isDeepStrictEqual(stored,returned))throw new TypeError('persisted-base-pulse-observation-mismatch');
-     const valuation=stored.quotedValue;
-     journalObservation={id:stored.id,type:stored.type,chainId:stored.chainId,address:stored.address,observedAt:stored.observedAt,boundary:stored.boundary,fullWallet:false,tokenBalances:stored.tokenBalances.length,tokenRefusals:stored.failures.length,...(valuation?{quotedValue:{quotedSubtotalUsdMicros:valuation.quotedSubtotalUsdMicros,quoted:valuation.quoted,unpriced:valuation.unpriced,unobserved:valuation.unobserved,currentEquityUsd:null,riskBooksEstablished:false,orderEffect:false}}:{}),completeObservationReference:stored.id};
+     if(storedVenue!=='evm'||fleetRecord!==stored.id||stored.type!=='BaseTreasuryPortfolioObservation'||!isDeepStrictEqual(compact,returned))throw new TypeError('persisted-base-portfolio-observation-mismatch');
+     journalObservation={...compact,completeObservationReference:stored.id};
     }
     const receipt=custody.record({category:'venue-observation',record:{venue,tool,observed:journalObservation},recordedAt:clock(),told:{for:true,against:false}});
 
     results[venue]={status:'observed',evidence:receipt.id,fleetRecord:observed.fleetRecord??null};
     if(observed.settlementAccounting)results[venue].settlements={verifiedPayouts:observed.settlementAccounting.records.filter(row=>row.payoutReconciled).length,payoutMismatches:observed.settlementAccounting.records.filter(row=>!row.payoutReconciled).length,refusals:observed.settlementAccounting.refusals.length,accountCashReconciled:false};
-    if(venue==='base')results[venue].recovery=baseRecovery;
+    if(venue==='base'){results[venue].recovery=baseRecovery;results[venue].summary=journalObservation.summary;}
     if(venue==='kalshi')results[venue].recovery=kalshiRecovery;
    }catch(error){
     const receipt=custody.record({category:'venue-observation-refusal',record:{venue,tool,reason:error.message},recordedAt:clock(),told:{for:true,against:false}});
     results[venue]={status:'refused',evidence:receipt.id,reason:error.message,...(venue==='base'?{recovery:baseRecovery}:venue==='kalshi'?{recovery:kalshiRecovery}:{})};
    }
   }));
-  // Protocol positions use the upstream treasury carrier, independent of spot balances.
-  let portfolioResult;
-  try{
-   const observed=await source.client.call('base_fleet_observe_portfolio',{});
-   const stored=await readBaseFleetRecord({directory:join(root,'evm','observations'),reference:observed.id});
-   const {portfolio,...compact}=stored;
-   const {venue,fleetRecord,...returned}=observed;
-   if(venue!=='evm'||fleetRecord!==stored.id||stored.type!=='BaseTreasuryPortfolioObservation'||!isDeepStrictEqual(compact,returned))throw new TypeError('persisted-base-portfolio-observation-mismatch');
-   const evidence=custody.record({category:'venue-observation',record:{venue:'base',tool:'base_fleet_observe_portfolio',observed:{...compact,completeObservationReference:stored.id}},recordedAt:clock(),told:{for:true,against:false}}).id;
-   portfolioResult={status:'observed',evidence,fleetRecord:stored.id,summary:stored.summary};
-  }catch(error){
-   const evidence=custody.record({category:'venue-observation-refusal',record:{venue:'base',tool:'base_fleet_observe_portfolio',reason:error.message},recordedAt:clock(),told:{for:true,against:false}}).id;
-   portfolioResult={status:'refused',evidence,reason:error.message};
-  }
-  results.base.portfolio=portfolioResult;
   if(!reference)results.alpaca={status:'not-configured',reason:'production-observation-grant-reference-absent'};
   let alpacaExecution;
   try{alpacaExecution=await source.client.call('alpaca_live_run_fleet_cycle',{});}
