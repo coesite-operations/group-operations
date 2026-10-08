@@ -29,7 +29,7 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
   const walletState = ageState(walletObservedAt, asOf, 24 * 60 * 60 * 1000);
   const x402Record = object(x402Settlement?.value);
   const x402ObservedAt = iso(x402Record?.observedAt);
-  const isSellerBooking = x402Record?.type === "X402SellerOutcomeObservation";
+  const isSellerBooking = ["X402SellerPaymentObservation", "X402SellerOutcomeObservation"].includes(x402Record?.type);
   const x402State = x402Record === null ? "unknown"
     : isSellerBooking && x402Record.state !== "unavailable" ? x402Record.state
       : isSellerBooking ? "unavailable" : ageState(x402ObservedAt, asOf, 24 * 60 * 60 * 1000);
@@ -50,10 +50,6 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
         const unreadable = rows.filter((row) => row.state === "unreadable");
         const named = moved.slice(0, 6).map((row) => `${row.commodity} ${row.difference.startsWith("-") ? "" : "+"}${row.difference}`).join(", ");
         return [
-          ...(chainReconciliation.sourceCoverage?.status === "unresolved"
-            ? [`Hive movement source coverage is unresolved (${chainReconciliation.sourceCoverage.unresolved?.length ?? 0} recorded refusal(s)); balanced books do not establish completeness`]
-            : chainReconciliation.sourceCoverage?.status !== "complete"
-              ? ["Hive movement source coverage has not been established; balanced books do not establish completeness"] : []),
           ...(moved.length === 0 ? [] : [`${moved.length} of ${rows.length} chain balances at ${chainReconciliation.cutoff} moved with no other book recording it (${named}${moved.length > 6 ? ", …" : ""}): booked in ${chainReconciliation.movementBook ?? "the book of chain movements"}, ${Number.isInteger(chainReconciliation.explained) && chainReconciliation.explained > 0 ? `${chainReconciliation.explained} of them explained by the accounts' histories (curation, staking, transfers), the rest as unclassified gain or loss` : "as unclassified gain or loss, the accounts' histories not read"}`]),
           ...(unreadable.length === 0 ? [] : [`${unreadable.length} chain balance(s) at ${chainReconciliation.cutoff} name accounts the books cannot read`]),
         ];
@@ -64,22 +60,22 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
     ...(chainReconciliation?.failed > 0 ? [`${chainReconciliation.failed} custody wallet reading(s) failed, so the balances they share were not asserted`] : []),
     ...(walletState === "unknown" ? ["wallet registry observation date unavailable"] : walletState === "stale" ? [`wallet registry is stale since ${walletObservedAt}`] : []),
     ...(x402State === "unknown" ? ["x402 settlement evidence unavailable"] : x402State === "stale" ? [`x402 settlement evidence is stale since ${x402ObservedAt}`] : []),
-    ...(isSellerBooking && x402State === "unavailable" ? ["seller settlement storage or chain corroboration was unavailable; no outcome was told"] : []),
+    ...(isSellerBooking && x402State === "unavailable" ? ["seller settlement storage or chain corroboration was unavailable; previous cash evidence is held"] : []),
     ...(isSellerBooking && typeof x402Record.error === "string" ? [`seller settlement corroboration failed: ${x402Record.error}`] : []),
-    ...(isSellerBooking && x402Record.attributionRefusedCount > 0 ? [`${x402Record.attributionRefusedCount} seller transfer(s) were corroborated on-chain but lack a transaction-time offer snapshot, so they were not told as outcomes`] : []),
-    ...(isSellerBooking && x402Record.refusedCount > 0 && !(x402Record.attributionRefusedCount > 0) ? [`${x402Record.refusedCount} seller settlement record(s) were refused; only fully attributed records are told`] : []),
+    ...(isSellerBooking && x402Record.attributionRefusedCount > 0 ? [`${x402Record.attributionRefusedCount} seller transfer(s) were corroborated on-chain but lack qualified transaction-time seller or tariff attribution, so cash remains unattributed and is never assigned from today's catalogue`] : []),
+    ...(isSellerBooking && x402Record.refusedCount > 0 && !(x402Record.attributionRefusedCount > 0) ? [`${x402Record.refusedCount} seller settlement record(s) were refused; only independently corroborated cash is available for book projection`] : []),
     ...(isSellerBooking && x402Record.border?.self?.count > 0 ? [`${x402Record.border.self.count} corroborated payment(s) came from the Group's own wallets (${moneyText(x402Record.border.self.value)}): the Group paying itself, never a sale`] : []),
-    ...(isSellerBooking && x402Record.border?.related?.count > 0 ? [`${x402Record.border.related.count} payment(s) came from related parties (${moneyText(x402Record.border.related.value)}), booked as related-party sales`] : []),
+    ...(isSellerBooking && x402Record.border?.related?.count > 0 ? [`${x402Record.border.related.count} payment(s) came from related parties (${moneyText(x402Record.border.related.value)}), relationship evidence alone does not recognize a sale`] : []),
     ...(isSellerBooking && x402Record.state === "current-empty" ? ["no private seller settlement witnesses were present in this observation; this does not prove no payments occurred"] : []),
     ...(hiveState === "configured-unobserved" ? ["Hive curation is scheduled but its latest reward settlement has not been observed here"] : ["Hive curation schedule is unavailable"]),
     ...(wallets.length === 0 ? ["wallet registry has no wallets"] : [`${wallets.length} registered wallets have no current balance observation in this readout`]),
   ];
   return Object.freeze({
     type: "GroupFinancialReadout",
-    version: 1,
+    version: 2,
     title: "561 Group daily financial readout",
     asOf,
-    recognitionBasis: "Settled income is carried only by the authored ledger and the Group's book of judged deliveries, projected from the outcome journal; a payment is a sale only when a party outside the Group made it. Configured earning mechanisms remain opportunities until independently observed.",
+    recognitionBasis: "The authored ledger and judged-delivery book retain their own recognition bases; legacy entries are not requalified by this readout. Corroborated x402 transfers remain cash claims pending performance and qualified receiving; a payment does not establish delivery, customer acceptance or a sale. Configured earning mechanisms remain opportunities until independently observed.",
     ledger: Object.freeze({
       kind: ledgerObservation.kind,
       state: ledgerState,
@@ -96,18 +92,20 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
         receiptVerifiedCount: isSellerBooking ? Number.isInteger(x402Record.receiptVerifiedCount) ? x402Record.receiptVerifiedCount : null : null,
         confirmedCount: isSellerBooking ? x402Record.confirmedCount : null,
         attributionRefusedCount: isSellerBooking ? Number.isInteger(x402Record.attributionRefusedCount) ? x402Record.attributionRefusedCount : null : null,
-        toldCount: isSellerBooking ? x402Record.toldCount : null,
-        alreadyToldCount: isSellerBooking ? x402Record.alreadyToldCount : null,
+        toldCount: null,
+        alreadyToldCount: null,
         refusedCount: isSellerBooking ? x402Record.refusedCount : null,
-        outcomeCount: isSellerBooking && Number.isInteger(x402Record.outcomeCount) ? x402Record.outcomeCount : null,
-        // Who paid, read from the wallet registry: strangers' money is a sale, the Group's own is not.
-        border: isSellerBooking && object(x402Record.border) ? x402Record.border : null,
+        outcomeCount: isSellerBooking ? 0 : null,
+        // Historical payment-derived acceptance remains a claim, never current demand.
+        border: null, legacyPaymentClaims: x402Record?.type === "X402SellerOutcomeObservation" ? { border: x402Record.border ?? null, toldCount: x402Record.toldCount ?? null, outcomeCount: x402Record.outcomeCount ?? null } : null,
+        paymentBooks: x402Record?.books ?? null, customerAcceptance: "unobserved",
+        revenueRecognized: x402Record?.type === "X402SellerPaymentObservation" ? false : null,
         transactionCount: Number.isInteger(x402Record?.transactionCount) ? x402Record.transactionCount : null }),
       Object.freeze({ kind: "hive-curation", state: hiveState, source: hiveCuration?.unitPath ?? null, earned: Object.freeze(curationEarned) }),
       Object.freeze({ kind: "entity-books", state: books === undefined ? "unobserved" : books.error !== undefined ? "unavailable" : "observed", ...(books ?? {}) }),
       Object.freeze({ kind: "economy", state: economy === undefined ? "unobserved" : "observed", ...(economy ?? {}) }),
       Object.freeze({ kind: "chain-reconciliation", state: chainReconciliation === undefined ? "unobserved" : chainReconciliation.error !== undefined ? "unavailable" : (chainReconciliation.rows ?? []).every((row) => row.state === "agrees") ? "agrees" : "differs",
-        cutoff: chainReconciliation?.cutoff ?? null, proposal: chainReconciliation?.proposalPath ?? null, movementBook: chainReconciliation?.movementBook ?? null, rows: chainReconciliation?.rows ?? [], sourceCoverage: chainReconciliation?.sourceCoverage ?? { status: "not-established", unresolved: [] }, sourceEvidencePath: chainReconciliation?.sourceEvidencePath ?? null, ...(chainReconciliation?.error ? { error: chainReconciliation.error } : {}) }),
+        cutoff: chainReconciliation?.cutoff ?? null, proposal: chainReconciliation?.proposalPath ?? null, movementBook: chainReconciliation?.movementBook ?? null, rows: chainReconciliation?.rows ?? [], ...(chainReconciliation?.error ? { error: chainReconciliation.error } : {}) }),
     ]),
     earningActions: Object.freeze([
       Object.freeze({ action: "observe-x402-settlements", state: x402ObservationCurrent ? "continue" : "run", reason: x402ObservationCurrent ? "settlement evidence is current" : "settlement evidence needs a current observation" }),

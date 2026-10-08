@@ -1,32 +1,33 @@
 #!/usr/bin/env node
+import { writeSellerPaymentBooks } from "../src/seller-payment-books.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { corroborateMarketSellerSettlements } from "@red-cup-engineering/x402-services-section/seller-settlements";
 import { composeGroupFinancialReadout, writeGroupFinancialReadout } from "@561-group/group-operations/group-financial-readout";
-import { acceptanceReadoutOf, entityBooks, outcomeJournal } from "@red-cup-engineering/organizing/enterprise";
+import { entityBooks } from "@red-cup-engineering/organizing/enterprise";
+import { outcomeJournal } from "@red-cup-engineering/organizing/enterprise";
 import { readLedgerReport } from "@red-cup-engineering/farolfi/ledger/reports";
-import { agencyAt, agencyRootOf } from "@red-cup-engineering/metroplat/offices";
-import { GROUP_ENTITY, groupPartyOf, writeOutcomeBook, x402SettlementOutcomes } from "../src/acceptance.mjs";
+import { agencyAt } from "@red-cup-engineering/organizing/agency/held";
+import { GROUP_ENTITY, bookedSourcesOf, groupPartyOf, writeOutcomeBook } from "../src/acceptance.mjs";
 import { entityBooksReadingOf, latestRecordedEconomy } from "../src/books-reading.mjs";
 import { latestChainReconciliation } from "../src/reconciliation.mjs";
 
 
-function repositoryRoot(from) {
-  for (let directory = from; directory !== dirname(directory); directory = dirname(directory)) {
-    if (existsSync(join(directory, "pnpm-workspace.yaml"))) return directory;
-  }
-  throw new Error("produce-group-financial-readout: repository root not found");
+// Source defaults are available only through an explicitly configured source root.
+// Released execution uses the admitted ledger, registry and agency state paths.
+function sourceDefaults(environment) {
+  const root = environment.METROPLAT_REPOSITORY_ROOT;
+  if (typeof root !== "string" || root.trim() === "") return {};
+  const source = (...segments) => join(resolve(root), "lib", "emsenn", "services", "561-group", "services", ...segments);
+  return {
+    ledger: source("561-group-services-section", "data", "logs", "ledgers", "561-group-main-ledger.beancount"),
+    walletRegistry: source("engineering-services-section", "services", "computer-engineering-services-section", "services", "computer-systems-engineering-services-section", "services", "computer-blockchain-system-services-section", "services", "key-management-services-section", "data", "records", "2026-09-05-wallet-registry.json"),
+    hiveTimer: source("engineering-services-section", "services", "computer-engineering-services-section", "services", "computer-systems-engineering-services-section", "services", "computer-blockchain-system-services-section", "services", "hive-engineering-services-section", "services", "curation-services-section", "content", "deployment", "systemd-user", "hive-curation-cycle.timer"),
+    agencyRoot: join(resolve(root), "lib"),
+  };
 }
-
-const moduleDirectory = dirname(fileURLToPath(import.meta.url));
-const root = repositoryRoot(moduleDirectory);
-const source = (...segments) => join(root, "lib", "emsenn", "services", "561-group", "services", ...segments);
-const defaults = Object.freeze({
-  ledger: source("561-group-services-section", "data", "logs", "ledgers", "561-group-main-ledger.beancount"),
-  walletRegistry: source("engineering-services-section", "services", "computer-engineering-services-section", "services", "computer-systems-engineering-services-section", "services", "computer-blockchain-system-services-section", "services", "key-management-services-section", "data", "records", "2026-09-05-wallet-registry.json"),
-  hiveTimer: source("engineering-services-section", "services", "computer-engineering-services-section", "services", "computer-systems-engineering-services-section", "services", "computer-blockchain-system-services-section", "services", "hive-engineering-services-section", "services", "curation-services-section", "content", "deployment", "systemd-user", "hive-curation-cycle.timer"),
-});
 
 function requiredEnvironment(name, environment) {
   const value = environment[name];
@@ -52,47 +53,52 @@ function observeLedger(path) {
 
 export async function produceGroupFinancialReadout({ environment = process.env, now = () => new Date().toISOString() } = {}) {
   const asOf = now();
-  const ledgerPath = resolve(environment.METROPLAT_LEDGER_JOURNAL ?? defaults.ledger);
-  const walletRegistryPath = resolve(environment.GROUP_WALLET_REGISTRY ?? defaults.walletRegistry);
-  const hiveTimer = resolve(environment.HIVE_CURATION_TIMER_UNIT ?? defaults.hiveTimer);
+  const defaults = sourceDefaults(environment);
+  const ledgerPath = requiredEnvironment("METROPLAT_LEDGER_JOURNAL", { METROPLAT_LEDGER_JOURNAL: environment.METROPLAT_LEDGER_JOURNAL ?? defaults.ledger });
+  const walletRegistryPath = requiredEnvironment("GROUP_WALLET_REGISTRY", { GROUP_WALLET_REGISTRY: environment.GROUP_WALLET_REGISTRY ?? defaults.walletRegistry });
+  const hiveTimer = environment.HIVE_CURATION_TIMER_UNIT ?? defaults.hiveTimer;
+  const agencyRoot = environment.METROPLAT_AGENCY_ROOT ?? defaults.agencyRoot;
   const walletRegistry = JSON.parse(await readFile(walletRegistryPath, "utf8"));
-  // Seller-specific edge witnesses are the attribution carrier. Each settlement two independent Base
-  // reads corroborate is a buyer's judgment of a delivery, told once as an outcome; the Group's book
-  // of judged deliveries is rewritten from the outcome journal, and the authored ledger is never
-  // appended to. Whether a payment is a sale is read from who paid (the wallet registry), never assumed.
+  // Independently corroborated cash is read separately from the work-outcome journal.
+  // A payment cannot impersonate a buyer judgment or become customer demand.
   let sellerBooking = null;
   try {
-    const corroboratorPath = join(root, "lib", "emsenn", "services", "561-group", "services", "engineering-services-section", "services", "computer-engineering-services-section", "services", "computer-networking-engineering-services-section", "services", "x402-services-section", "src", "settlement-derivation", "book-market-seller-settlements.mjs");
-    const { corroborateMarketSellerSettlements } = await import(pathToFileURL(corroboratorPath).href);
     const corroboration = await corroborateMarketSellerSettlements({ environment, now: () => new Date(asOf) });
-    const journal = outcomeJournal(requiredEnvironment("METROPLAT_DATA_ROOT", environment));
-    const told = journal.record(x402SettlementOutcomes(corroboration.settlements));
-    const outcomes = journal.read();
-    // A release is no repository: the agency is the one this script was released with.
-    const agency = agencyAt(agencyRootOf({ agencyRoot: environment.METROPLAT_AGENCY_ROOT ?? join(root, "lib") }));
-    const partyOf = groupPartyOf({ enterprises: [...agency.enterprises.values()], walletRegistry });
-    await writeOutcomeBook(requiredEnvironment("METROPLAT_WEB_DATA_DIR", environment), outcomes, partyOf, { ledgerPath });
-    const x402 = outcomes.filter((outcome) => outcome.source === "x402-settlement");
-    const { border } = acceptanceReadoutOf(x402, { from: "2000-01-01T00:00:00.000Z", to: asOf, partyOf });
+    const books = await writeSellerPaymentBooks(requiredEnvironment("METROPLAT_DATA_ROOT", environment), corroboration, { booked: await bookedSourcesOf(ledgerPath) });
     const { settlements, ...observed } = corroboration;
-    sellerBooking = { ...observed, type: "X402SellerOutcomeObservation", toldCount: told, alreadyToldCount: settlements.length - told, outcomeCount: x402.length, border };
+    sellerBooking = { ...observed, type: "X402SellerPaymentObservation", books, outcomeCount: 0,
+      customerAcceptance: "unobserved", revenueRecognized: false };
+
   } catch (error) {
     // Financial readout generation remains available when R2/chain infrastructure is down;
     // the unresolved failure is surfaced and nothing is told.
-    sellerBooking = { type: "X402SellerOutcomeObservation", state: "unavailable", observedAt: asOf, witnessCount: null, receiptVerifiedCount: null, confirmedCount: null, attributionRefusedCount: null, toldCount: null, alreadyToldCount: null, refusedCount: null, error: error instanceof Error ? error.message : String(error) };
+    sellerBooking = { type: "X402SellerPaymentObservation", state: "unavailable", observedAt: asOf, witnessCount: null, receiptVerifiedCount: null, confirmedCount: null, attributionRefusedCount: null, toldCount: null, alreadyToldCount: null, refusedCount: null, error: error instanceof Error ? error.message : String(error) };
   }
   // The books against the chain: the latest reconciliation the chain-reconciliation job recorded
   // (reconcile-books-with-chain); reading the chain and the accounts' histories is that job's, never
   // this readout's.
   const chainReconciliation = await latestChainReconciliation(join(requiredEnvironment("METROPLAT_WEB_DATA_DIR", environment), "records", "reconciliation"));
+  // Refresh the existing derived judgment book, including withdrawal of historical
+  // payment-as-acceptance projections. Keep the original journal and authored ledger.
+  // This reads actual judgments; it never records cash as a judgment.
+  let outcomeProjectionError;
+  if (environment.METROPLAT_DATA_ROOT) {
+    try {
+      const agency = agencyAt(requiredEnvironment("METROPLAT_AGENCY_ROOT", { METROPLAT_AGENCY_ROOT: agencyRoot }));
+      const partyOf = groupPartyOf({ enterprises: [...agency.enterprises.values()], walletRegistry });
+      await writeOutcomeBook(requiredEnvironment("METROPLAT_WEB_DATA_DIR", environment),
+        outcomeJournal(requiredEnvironment("METROPLAT_DATA_ROOT", environment)).read(), partyOf, { ledgerPath });
+    } catch (error) { outcomeProjectionError = error instanceof Error ? error.message : String(error); }
+  }
   // The CFO reads the books and the economy side by side: the entity's books consolidated (its
   // authored ledger and the books the node keeps for it), and the economy the latest acceptance
   // readout recorded from the board.
   let books;
   try {
-    const agency = agencyAt(agencyRootOf({ agencyRoot: environment.METROPLAT_AGENCY_ROOT ?? join(root, "lib") }));
-    const { members } = entityBooks(agency, GROUP_ENTITY, { environment, repositoryRoot: root });
-    books = await entityBooksReadingOf({ books: [{ book: GROUP_ENTITY, path: ledgerPath }, ...members], readLedgerReport });
+    const agency = agencyAt(requiredEnvironment("METROPLAT_AGENCY_ROOT", { METROPLAT_AGENCY_ROOT: agencyRoot }));
+    const { members } = entityBooks(agency, GROUP_ENTITY, { environment, ...(environment.METROPLAT_REPOSITORY_ROOT ? { repositoryRoot: environment.METROPLAT_REPOSITORY_ROOT } : {}) });
+    books = outcomeProjectionError ? { error: `judgment book refresh failed: ${outcomeProjectionError}` }
+      : await entityBooksReadingOf({ books: [{ book: GROUP_ENTITY, path: ledgerPath }, ...members], readLedgerReport });
   } catch (error) {
     books = { error: error instanceof Error ? error.message : String(error) };
   }
@@ -102,7 +108,7 @@ export async function produceGroupFinancialReadout({ environment = process.env, 
     ledgerObservation: observeLedger(ledgerPath),
     walletRegistry,
     x402Settlement: { path: null, value: sellerBooking },
-    hiveCuration: { configured: existsSync(hiveTimer), unitPath: hiveTimer },
+    hiveCuration: { configured: typeof hiveTimer === "string" && existsSync(hiveTimer), unitPath: hiveTimer ?? null },
     chainReconciliation,
     books,
     economy,

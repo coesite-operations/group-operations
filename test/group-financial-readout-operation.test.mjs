@@ -18,6 +18,7 @@ test("group-financial-readout-produce writes a readout through the Group Operati
   await writeFile(secrets, "", "utf8");
   const environment = {
     METROPLAT_WEB_DATA_DIR: root,
+    METROPLAT_DATA_ROOT: path.join(root, "private"),
     METROPLAT_LEDGER_JOURNAL: ledger,
     X402_SETTLEMENT_RECORDS: records,
     X402_SECRETS_FILE: secrets,
@@ -49,8 +50,10 @@ test("daily readout tells corroborated transfers apart from sales, and the Group
 
   const x402 = readout.observations.find((item) => item.kind === "x402-settlements");
   assert.equal(x402.receiptVerifiedCount, 4);
-  assert.equal(x402.toldCount, 3);
-  assert.equal(x402.border.external.count, 1);
-  assert.ok(readout.unresolved.includes("1 seller transfer(s) were corroborated on-chain but lack a transaction-time offer snapshot, so they were not told as outcomes"));
+  assert.equal(x402.toldCount, null);
+  assert.equal(x402.legacyPaymentClaims.toldCount, 3);
+  assert.equal(x402.border, null);
+  assert.equal(x402.legacyPaymentClaims.border.external.count, 1);
+  assert.ok(readout.unresolved.includes("1 seller transfer(s) were corroborated on-chain but lack qualified transaction-time seller or tariff attribution, so cash remains unattributed and is never assigned from today's catalogue"));
   assert.ok(readout.unresolved.includes("2 corroborated payment(s) came from the Group's own wallets (0.05 USDC): the Group paying itself, never a sale"));
 });

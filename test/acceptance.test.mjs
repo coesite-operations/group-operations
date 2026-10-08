@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { marketJudgmentsIndexOf, outcomeOf, seamOfOutcome, standingOf } from "@red-cup-engineering/organizing/enterprise";
-import { KOIOS_EDITOR, KOIOS_SECTION, groupPartyOf, inferenceMarketOutcomesOf, koiosEditorOutcomesOf, resourcesOfMeasured, walletAccountsOf, x402SettlementOutcomes } from "../src/acceptance.mjs";
+import { KOIOS_EDITOR, KOIOS_SECTION, groupPartyOf, inferenceMarketOutcomesOf, koiosEditorOutcomesOf, resourcesOfMeasured, walletAccountsOf } from "../src/acceptance.mjs";
 
 const registry = { wallets: [
   { address: "0x42F72C0a340A4A55C082Fe42483e87691D2bff64", owner: "org" },
@@ -9,19 +9,12 @@ const registry = { wallets: [
 ] };
 const enterprises = [{ id: "engineering", sectionPath: "services/engineering-services-section", entity: "561-group-llc" }, { id: "causeway-publishing", sectionPath: "services/public-services-section", entity: "561-group-llc" }];
 
-const settlement = (payer, tx) => ({
-  transactionHash: tx, logIndex: "1", network: "eip155:8453", asset: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", payer, receiver: "0x32886f6f361c1d570255c2762967a2e41d0e9b1a",
-  amount: "10000", amountUsdc: "0.01", blockTime: "2026-09-28T15:49:41.000Z", gateway: "translation", operation: "mandarin-english", sku: "ni:///sha-256;sku",
-  section: "lib/emsenn/services/561-group/services/engineering-services-section/services/x", ledgerAccount: "Income:Sales:X402:Translation", attribution: "catalog",
-  witnessId: "ni:///sha-256;w", evidenceId: `evm:eip155:8453:tx:${tx}`, sourceId: `evm:eip155:8453:asset:receiver:${tx}:1`,
-});
-
 test("an x402 payment is a sale only when no wallet the Group holds paid it", () => {
   const partyOf = groupPartyOf({ enterprises, walletRegistry: registry });
-  const [own, stranger] = x402SettlementOutcomes([settlement("0x42f72c0a340a4a55c082fe42483e87691d2bff64", "0xa"), settlement("0xec2abd3eda89bed90124736e317e847d5fb6d034", "0xb")]);
+  const [own, stranger] = ["0x42f72c0a340a4a55c082fe42483e87691d2bff64", "0xec2abd3eda89bed90124736e317e847d5fb6d034"].map((payer, i) => outcomeOf({ source: "customer", lot: "delivery", delivery: `delivery:${i}`, provider: "engineering", judge: `eip155:8453:${payer}`, verdict: "accepted", at: "2026-10-03T00:00:00.000Z", evidence: [`customer-judgment:${i}`] }));
   assert.equal(seamOfOutcome(own, partyOf), "intra-group");
   assert.equal(seamOfOutcome(stranger, partyOf), "external");
-  assert.ok(stranger.evidence.includes("x402-attribution:catalog"));
+  assert.ok(stranger.evidence.includes("customer-judgment:1"));
   assert.equal(walletAccountsOf(registry).get("0x32886f6f361c1d570255c2762967a2e41d0e9b1a").entity, "founder");
 });
 

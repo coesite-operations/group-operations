@@ -13,8 +13,6 @@ import { pricingRootOf } from "@red-cup-engineering/computer-inference-engine/di
 
 /** The legal entity the Group's own wallets and seated enterprises sign for. */
 export const GROUP_ENTITY = "561-group-llc";
-/** Where a Base USDC settlement lands in the Group's books. */
-export const BASE_USDC_ACCOUNT = "Assets:Digital-Assets:EVM:Base:Tokens";
 
 const DAY_MS = 86_400_000;
 const text = (value) => typeof value === "string" && value.trim() !== "";
@@ -57,26 +55,6 @@ export function groupPartyOf({ enterprises = [], walletRegistry, entity = GROUP_
     accounts: walletAccountsOf(walletRegistry, { entity, territories }),
     namespaces: HOUSE_NAMESPACES.map((prefix) => ({ prefix, party: { entity } })),
   });
-}
-
-/**
- * The outcomes of corroborated x402 seller settlements (x402 `corroborateMarketSellerSettlements`):
- * a buyer paying an offer is the buyer accepting its delivery, at the offer's price, settled on
- * Base, provided by the section the offer sells from and judged by the paying account.
- */
-export function x402SettlementOutcomes(settlements = []) {
-  return Object.freeze(settlements.map((settlement) => outcomeOf({
-    source: "x402-settlement",
-    lot: settlement.sku,
-    delivery: settlement.sourceId,
-    provider: text(settlement.section) ? `section:${settlement.section}` : `x402-gateway:${settlement.gateway}`,
-    judge: `${settlement.network}:${settlement.payer}`,
-    verdict: "accepted",
-    at: settlement.blockTime,
-    evidence: [settlement.evidenceId, settlement.witnessId, `x402-attribution:${settlement.attribution ?? "snapshot"}`],
-    taskClass: `x402:${settlement.gateway}/${settlement.operation}`,
-    value: { amount: settlement.amountUsdc, currency: "USDC", basis: "price", account: settlement.ledgerAccount, settledTo: BASE_USDC_ACCOUNT },
-  })));
 }
 
 /**
@@ -306,7 +284,7 @@ export async function produceAcceptanceReadout({ environment = process.env, now 
   const readout = Object.freeze({
     type: "GroupAcceptanceReadout", version: 1, asOf, week: week.week, complete: period !== "current",
     ...acceptanceReadoutOf(outcomes, { from: week.from, to, partyOf, priceOf: resourcePricesAt(resourcePricesIndexOf({ environment: { METROPLAT_WEB_DATA_DIR: webData } })) }),
-    journal: Object.freeze({ outcomes: outcomes.length, digest: outcomesDigestOf(outcomes), bySource: Object.freeze(Object.fromEntries([...new Set(outcomes.map((outcome) => outcome.source))].sort().map((source) => [source, outcomes.filter((outcome) => outcome.source === source).length]))) }),
+    journal: Object.freeze({ excluded: Object.freeze(["x402-settlement"]), outcomes: outcomes.length, digest: outcomesDigestOf(outcomes), bySource: Object.freeze(Object.fromEntries([...new Set(outcomes.map((outcome) => outcome.source))].sort().map((source) => [source, outcomes.filter((outcome) => outcome.source === source).length]))) }),
     told: Object.freeze({ workArena: arena, inferenceMarket: inference, koiosEditor: editor }),
     economy,
     // Each face's reach, from the dated readings the personas' turns append to their records alone.
