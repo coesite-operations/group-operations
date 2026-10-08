@@ -1,6 +1,8 @@
 import {reconcileDeskOrderEffects} from '@red-cup-engineering/kalshi-services-section/desk-order-recovery';
 import {persistBaseFleetRecord,readBaseFleetRecord,readBaseFleetRecordWindow} from './base-record-store.mjs';
 import {discoverObservedBaseTokens} from './base-observed-tokens.mjs';
+import {observePortfolio} from '@red-cup-engineering/treasury-observation-service/portfolio';
+import {chain} from '@red-cup-engineering/treasury-observation-service/chains';
 import {reconcileSettlementPayout} from '@red-cup-engineering/kalshi-services-section/settlement-accounting';
 import {readDeskAuthority} from '@red-cup-engineering/kalshi-services-section/desk-authority';
 import {homedir} from 'node:os';
@@ -16,8 +18,9 @@ import {createSemanticRecordJournal} from '@red-cup-engineering/semiotic-eavt-se
 import {createKalshiClient} from '@red-cup-engineering/kalshi-services-section/client';
 const empty={type:'object',properties:{},additionalProperties:false};
 const venueTools=Object.freeze([
+ {name:'base_fleet_observe_portfolio',description:'Observe the authorized YANAGI Base wallet with the upstream treasury observer: finalized-block native balances, verified ERC-20 holdings and Beefy vault-share quantities. Retain the complete evidence under its native identity and return a compact summary. NFTs and USD risk books remain explicitly incomplete; no signing or orders.',inputSchema:empty},
  {name:'base_fleet_read_record',description:'Read at most 32768 exact bytes of one retained private Base account, quote or unsigned preparation record. Verifies its native identity; no fresh observation, signing or trade authority.',inputSchema:{type:'object',properties:{reference:{type:'string',pattern:'^ni:///sha-256;[A-Za-z0-9_-]{43}$'},offset:{type:'integer',minimum:0,maximum:1048576},limit:{type:'integer',minimum:1,maximum:32768}},required:['reference'],additionalProperties:false}},
- {name:'base_fleet_observe',description:'Read native ETH, WETH, native USDC and up to 128 declared ERC-20 balances at one fixed block. Coverage remains explicitly partial and unvalued. No signing.',inputSchema:{type:'object',properties:{tokens:{type:'array',maxItems:BASE_SPOT.maximumObservedTokens,uniqueItems:true,items:{type:'string',pattern:'^0x[0-9a-fA-F]{40}$'}}},additionalProperties:false}},
+ {name:'base_fleet_observe',description:'Read native ETH, WETH, native USDC and a bounded set of declared ERC-20 balances at one fixed block. Coverage remains explicitly partial and unvalued. No signing.',inputSchema:{type:'object',properties:{tokens:{type:'array',maxItems:BASE_SPOT.maximumObservedTokens,uniqueItems:true,items:{type:'string',pattern:'^0x[0-9a-fA-F]{40}$'}}},additionalProperties:false}},
  {name:'base_fleet_reconcile',description:'Recover the existing 0x224 pending transaction by its original hash, canonical finalized receipt and recorded outcome. No signing or broadcast. Exact finalized ETH/USDC/WETH quantities and receipt fees must reconcile before effect custody clears. USD profit remains unclaimed without cost basis.',inputSchema:empty},
  {name:'base_fleet_quote_native_usdc',description:'Observe an executable native ETH to native USDC Uniswap quote for 0x224 at one block. Persist the quote; no signing or venue write.',inputSchema:{type:'object',properties:{amountInWei:{type:'string',pattern:'^[0-9]{1,78}$'},fee:{type:'integer',enum:[100,500,3000,10000]}},required:['amountInWei'],additionalProperties:false}},
  {name:'base_fleet_prepare_native_usdc',description:'Prepare a recorded native ETH to USDC quote with fixed-block simulation and rollup fee reserves. Returns an unsigned transaction; current mandate admission and pending nonce checks remain required.',inputSchema:{type:'object',properties:{quoteReference:{type:'string',pattern:'^ni:///sha-256;[A-Za-z0-9_-]{43}$'},minimumOutputAtomic:{type:'string',pattern:'^[0-9]{1,78}$'},deadline:{type:'integer'}},required:['quoteReference','minimumOutputAtomic','deadline'],additionalProperties:false}},
@@ -73,6 +76,13 @@ export function tradingFleetNetworkSources({environment,config}){
    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!Object.hasOwn(tool.inputSchema.properties,key)))throw new TypeError('exact-fleet-read-arguments-required');
    let value;
    if(tool.name==='base_fleet_read_record')value=await readBaseFleetRecordWindow({directory:join(root,'evm','observations'),...input});
+   else if(tool.name==='base_fleet_observe_portfolio'){
+    const portfolio=await observePortfolio({roster:[{subject:'YANAGI',address:BASE_SPOT.address}],chains:[chain('base')],finality:'finalized',timeoutMs:15000});
+    const summary={components:portfolio.chains.map(item=>({chain:item.chain,boundary:item.provenance,coverage:item.coverage,wallets:(item.wallets??[]).map(wallet=>({address:wallet.address,nativeChecked:wallet.native?.checked===true,tokensChecked:wallet.verifiedTokens?.checked===true,verifiedTokens:wallet.verifiedTokens?.holdings?.length??null,vaultsChecked:wallet.beefyPositions?.checked===true,vaultPositions:wallet.beefyPositions?.positions?.length??null}))})),sourceCoverage:portfolio.coverage,fullWallet:false,usdValuation:false,nftPositionsObserved:false,riskBooksEstablished:false,orderEffect:false};
+    const body={type:'BaseTreasuryPortfolioObservation',chainId:8453,address:BASE_SPOT.address,observedAt:portfolio.observedAt,portfolio,summary};
+    const stored=await persist('evm',{id:baseSpotRecordId(body),...body});
+    const {portfolio:complete,...compact}=stored;value=compact;
+   }
    else if(tool.name==='kalshi_fleet_reconcile')value=await reconcileDeskOrderEffects({env:environment});
    else if(tool.name==='base_fleet_observe'){
     const selection=Object.hasOwn(input,'tokens')?{tokens:input.tokens,sourceFleetRecords:[]}:await discoverObservedBaseTokens({directory:join(root,'evm','observations'),address:BASE_SPOT.address,maxTokens:BASE_SPOT.maximumObservedTokens});
