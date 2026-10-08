@@ -1,11 +1,11 @@
 import { operation } from "@red-cup-engineering/computer-system-engine/rpc/operation";
 import { produceGroupFinancialReadout } from "../scripts/produce-group-financial-readout.mjs";
-import { sendPeerEvidence } from "./peer-evidence.mjs";
 
 async function produceAndFederate({ environment, clock }) {
   const result = await produceGroupFinancialReadout({ environment, now: clock });
   const recipient = environment.GROUP_PEER_ACTOR;
   if (recipient === undefined) return result;
+  const { sendPeerEvidence } = await import("./peer-evidence.mjs");
   const delivery = await sendPeerEvidence({
     environment, peerActor: recipient, peerInbox: environment.GROUP_PEER_INBOX,
     objectKind: "561-group.financial-readout.v1", value: result.readout,

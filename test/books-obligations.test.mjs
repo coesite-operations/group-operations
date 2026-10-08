@@ -21,14 +21,14 @@ test("the authored ledger's x402 sales are told apart: the Group paying itself i
   assert.deepEqual(x402SalesOf(ledger, registry).map((item) => [item.sourceId, item.selfPaid]), [["evm:own", true], ["evm:stranger", false]]);
 });
 
-test("approving reverses the Group's own payments and hands an outside buyer's sale to the outcome book", async () => {
+test("custodian approval defers payment-derived income while preserving cash and transfer identities", async () => {
   const root = mkdtempSync(join(tmpdir(), "books-"));
   const ledgerPath = join(root, "lib/emsenn/services/561-group/services/561-group-services-section/data/logs/ledgers/561-group-main-ledger.beancount");
   const registryPath = join(root, "lib/emsenn/services/561-group/services/engineering-services-section/services/computer-engineering-services-section/services/computer-systems-engineering-services-section/services/computer-blockchain-system-services-section/services/key-management-services-section/data/records/2026-09-05-wallet-registry.json");
   for (const [path, body] of [[ledgerPath, ledger], [registryPath, JSON.stringify(registry)]]) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, body); }
   const books = booksObligations({ accountHolder: "emsenn", repositoryRoot: root, env: { METROPLAT_WEB_DATA_DIR: join(root, "web") } });
   const [owed] = books.obligations();
-  assert.equal(owed.title, "Decide whether to reverse 1 sales the Group paid itself");
+  assert.equal(owed.title, "Decide whether to defer 2 payment-derived income entries");
   const { memo } = books.start(owed.id);
   assert.deepEqual([memo.sales, memo.handed], [["evm:own"], ["evm:stranger"]]);
   books.finish(owed.id, memo, "approve");
@@ -36,9 +36,10 @@ test("approving reverses the Group's own payments and hands an outside buyer's s
   const ruling = JSON.parse(readFileSync(join(root, "web/records/rulings", `${owed.id}.json`), "utf8"));
   const entries = reversalEntriesOf(x402SalesOf(ledger, registry), ruling);
   assert.equal(entries.length, 2);
-  assert.match(entries[1], /handed_to: "561-group-llc-judged-deliveries"/u);
+  assert.match(entries[1], /Liabilities:Pending:X402-Receipts  -0.01 USDC/u);
+  assert.doesNotMatch(entries.join("\n"), /handed_to:|Assets:Digital-Assets/);
   assert.deepEqual([...await bookedSourcesOf(ledgerPath)].sort(), ["evm:own", "evm:stranger"]);
   appendFileSync(ledgerPath, `\n${entries.join("\n\n")}\n`);
-  assert.deepEqual([...await bookedSourcesOf(ledgerPath)], ["evm:own"]);
+  assert.deepEqual([...await bookedSourcesOf(ledgerPath)].sort(), ["evm:own", "evm:stranger"]);
   assert.deepEqual(x402SalesOf(readFileSync(ledgerPath, "utf8"), registry).length, 2);
 });

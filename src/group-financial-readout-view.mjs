@@ -9,7 +9,7 @@ import { currentPeerEvidence } from "./peer-evidence.mjs";
 const OBJECT_KIND = "561-group.financial-readout.v1";
 
 function validReadout(value) {
-  return value?.type === "GroupFinancialReadout" && typeof value.asOf === "string"
+  return value?.type === "GroupFinancialReadout" && value.version === 2 && typeof value.asOf === "string"
     && Number.isFinite(Date.parse(value.asOf)) && Array.isArray(value.observations);
 }
 
@@ -28,7 +28,7 @@ function localReadout(dataDir) {
   return null;
 }
 
-const validAcceptance = (value) => value?.type === "GroupAcceptanceReadout" && typeof value.week === "string" && typeof value.asOf === "string";
+const validAcceptance = (value) => value?.type === "GroupAcceptanceReadout" && typeof value.week === "string" && typeof value.asOf === "string" && value.journal?.excluded?.includes("x402-settlement");
 
 /**
  * The node's acceptance readouts (group-operations acceptance-readout job): the last complete week
@@ -91,31 +91,22 @@ export function custodyDisagreementsOf(ledgerText, registry) {
     ? [Object.freeze({ address, ledgerAccount, registryOwner: "founder" })] : []);
 }
 
-/** The book the outcome journal keeps the Group's sales in, which a handed-over sale moves to. */
-export const JUDGED_DELIVERIES_BOOK = "561-group-llc-judged-deliveries";
-
-/**
- * The entries an approved ruling adds to the authored ledger, dated the day of the ruling, each
- * moving a sale's amount back from its income account against where it was booked as received and
- * citing the ruling and the entry it reverses. A sale the Group paid itself (`entries`) is reversed
- * as no sale. A sale an outside buyer paid (`handed`) is handed to the book of judged deliveries,
- * which books it from the outcome journal: the reversal names that book, and the authored ledger
- * stops counting what the outcome book now counts. Nothing booked is edited; a sale the ruling did
- * not name is left alone.
- */
+/** A custodian-approved reclassification of legacy payment-derived income.
+ * Retain the authored cash asset and transfer identity; hold the consideration
+ * as pending receipts. Paying from outside the Group cannot establish acceptance.
+ * No original authored entry is modified and no ruling is inferred from cash. */
 export function reversalEntriesOf(sales, ruling) {
   if (ruling?.kind !== "561-group.books-ruling" || ruling.decision !== "approve") return [];
   const reversed = new Set(ruling.entries ?? []);
   const handed = new Set(ruling.handed ?? []);
   const date = String(ruling.at).slice(0, 10);
   return sales.filter((sale) => reversed.has(sale.sourceId) || handed.has(sale.sourceId)).map((sale) => [
-    handed.has(sale.sourceId) ? `${date} * "hand an x402 sale to the book of judged deliveries"` : `${date} * "reverse x402 self-payment booked as a sale"`,
+    `${date} * "reclassify payment-derived x402 income as pending cash"`,
     `  ruling: "${ruling.id}"`,
     `  reverses: "${sale.sourceId}"`,
-    ...(handed.has(sale.sourceId) ? [`  handed_to: "${JUDGED_DELIVERIES_BOOK}"`] : []),
     `  payer: "${sale.payer}"`,
     `  ${sale.account}  ${sale.amount} ${sale.currency}`,
-    `  Assets:Digital-Assets:EVM:Base:Tokens  -${sale.amount} ${sale.currency}`,
+    `  Liabilities:Pending:X402-Receipts  -${sale.amount} ${sale.currency}`,
   ].join("\n"));
 }
 
@@ -163,8 +154,8 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       const total = (list) => list.reduce((sum, sale) => sum + Number(sale.amount), 0).toFixed(3);
       const custody = custodyOwed();
       return [
-        ...(sales.length === 0 || ruled(id) ? [] : [{ id, to: [accountHolder], title: own.length === 0 ? `Decide whether ${sales.length} x402 sales move to the outcome book` : `Decide whether to reverse ${own.length} sales the Group paid itself`,
-          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by the Group's own wallet buying its listings for the x402 Bazaar, and a sale needs a buyer outside the Group. `}${outside.length === 0 ? "" : `The ${outside.length} an outside buyer paid (${total(outside)} ${outside[0].currency}) belong in the book the outcome journal keeps, beside every later sale. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
+        ...(sales.length === 0 || ruled(id) ? [] : [{ id, to: [accountHolder], title: `Decide whether to defer ${sales.length} payment-derived income entries`,
+          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by the Group's own wallet buying its listings for the x402 Bazaar, and a sale needs a buyer outside the Group. `}${outside.length === 0 ? "" : `The ${outside.length} paid by other wallets (${total(outside)} ${outside[0].currency}) also lack a qualified delivery judgment. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
         ...custody.map((entry) => ({ id: entry.id, to: [accountHolder], title: `Say whose wallets ${entry.credentials.length} keys hold`,
           why: `The main ledger holds the wallets of ${entry.credentials.length} keys (${entry.credentials.join(", ")}) in the Group's custody, but the wallet registry marks them as the founder's own. One of them receives the x402 market's sales. Only their holder can say which is true, and the books are wrong until the records agree.` })),
       ];
@@ -190,8 +181,8 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       return {
         memo: { id, sales: own.map((sale) => sale.sourceId), handed: outside.map((sale) => sale.sourceId) },
         steps: [
-          ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the house registry holds as the Group's own, to buy its listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reverses them: no sale happened.`]),
-          ...(outside.length === 0 ? [] : [`${outside.length} were paid by an outside buyer (${[...new Set(outside.map((sale) => sale.payer))].join(", ")}). Approving moves them to the book of judged deliveries, which books every sale from the outcome journal: each is reversed here and booked there, so the income is unchanged.`]),
+          ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the house registry holds as the Group's own, to buy its listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reclassifies their income as pending receipts without changing the cash asset.`]),
+          ...(outside.length === 0 ? [] : [`${outside.length} were paid by an outside buyer (${[...new Set(outside.map((sale) => sale.payer))].join(", ")}). Approving reclassifies their income as pending receipts. Cash remains in the authored asset account; delivery and customer acceptance are unobserved.`]),
           "Each reversal is dated today and cites your ruling. Nothing already booked is edited.",
           "Type approve, or decline to keep them as they are, and press the button.",
         ],
