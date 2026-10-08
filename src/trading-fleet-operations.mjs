@@ -3,7 +3,7 @@ import {runNodeJob} from '@red-cup-engineering/node-job-service';
 import {operation} from '@red-cup-engineering/computer-system-engine/rpc/operation';
 import {tradingFleetNetworkSources} from './trading-fleet-network.mjs';
 import {weatherNetworkSources,weatherTools} from './weather-network.mjs';
-import {readFinancialFleetEvidence} from '../scripts/run-financial-fleet-pulse.mjs';
+import {readFinancialFleetEvidence} from './financial-fleet-evidence.mjs';
 
 // Office commands and the network entrance consume the same venue custody
 // and admission path. Office standing grants access, never trading capital.
