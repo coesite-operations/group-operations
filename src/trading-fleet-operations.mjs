@@ -10,7 +10,6 @@ import {readFinancialFleetEvidence} from '../scripts/run-financial-fleet-pulse.m
 export function tradingFleetOperations(){
  const specs=[
   ['base-fleet-observe','base_fleet_observe',false],
-  ['base-fleet-observe-portfolio','base_fleet_observe_portfolio',false],
   ['base-fleet-read-record','base_fleet_read_record',false],
   ['base-fleet-reconcile','base_fleet_reconcile',false],
   ['base-fleet-quote-native-usdc','base_fleet_quote_native_usdc',false],

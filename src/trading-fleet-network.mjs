@@ -3,6 +3,7 @@ import {persistBaseFleetRecord,readBaseFleetRecord,readBaseFleetRecordWindow} fr
 import {discoverObservedBaseTokens} from './base-observed-tokens.mjs';
 import {observePortfolio} from '@red-cup-engineering/treasury-observation-service/portfolio';
 import {chain} from '@red-cup-engineering/treasury-observation-service/chains';
+import {verifiedTokenHoldings} from '@red-cup-engineering/treasury-observation-service/tokens';
 import {reconcileSettlementPayout} from '@red-cup-engineering/kalshi-services-section/settlement-accounting';
 import {readDeskAuthority} from '@red-cup-engineering/kalshi-services-section/desk-authority';
 import {homedir} from 'node:os';
@@ -13,14 +14,13 @@ import {createMcpClient,mcpInProcessTransport} from '@red-cup-engineering/mcp-en
 import {createAlpacaLiveMcp,alpacaLiveTools} from '@red-cup-engineering/alpaca-principal-actuation-service/mcp';
 import {openProductionAlpacaBrokerage} from '@red-cup-engineering/alpaca-principal-actuation-service';
 import {createPublicEvmReadPool,BASE_PUBLIC_EVM_CHAIN,BASE_PUBLIC_EVM_PROVIDERS} from '@red-cup-engineering/ethereum-engineering-services-section/public-evm-read';
-import {BASE_SPOT,baseSpotRecordId,verifyBaseSpotRecord,createBaseSpotAdapter,createBaseNativeUsdcRecovery,reconcileBaseNativeUsdcOutcome} from '@red-cup-engineering/pluggable-venue-adapter-service/base-spot';
+import {BASE_SPOT,baseSpotRecordId,createBaseSpotAdapter,createBaseNativeUsdcRecovery,reconcileBaseNativeUsdcOutcome} from '@red-cup-engineering/pluggable-venue-adapter-service/base-spot';
 import {createSemanticRecordJournal} from '@red-cup-engineering/semiotic-eavt-services-section/record-semantic-record';
 import {createKalshiClient} from '@red-cup-engineering/kalshi-services-section/client';
 const empty={type:'object',properties:{},additionalProperties:false};
 const venueTools=Object.freeze([
- {name:'base_fleet_observe_portfolio',description:'Observe the authorized YANAGI Base wallet with the upstream treasury observer: finalized-block native balances, verified ERC-20 holdings, vault-share quantities and staking-boost deposits/rewards. Retain the complete evidence under its native identity and return a compact summary. NFTs and USD risk books remain explicitly incomplete; no signing or orders.',inputSchema:empty},
  {name:'base_fleet_read_record',description:'Read at most 32768 exact bytes of one retained private Base account, quote or unsigned preparation record. Verifies its native identity; no fresh observation, signing or trade authority.',inputSchema:{type:'object',properties:{reference:{type:'string',pattern:'^ni:///sha-256;[A-Za-z0-9_-]{43}$'},offset:{type:'integer',minimum:0,maximum:1048576},limit:{type:'integer',minimum:1,maximum:32768}},required:['reference'],additionalProperties:false}},
- {name:'base_fleet_observe',description:'Read native ETH, WETH, native USDC and a bounded set of declared ERC-20 balances at one fixed block. Coverage remains explicitly partial and unvalued. No signing.',inputSchema:{type:'object',properties:{tokens:{type:'array',maxItems:BASE_SPOT.maximumObservedTokens,uniqueItems:true,items:{type:'string',pattern:'^0x[0-9a-fA-F]{40}$'}}},additionalProperties:false}},
+ {name:'base_fleet_observe',description:'Observe current YANAGI balances, ERC-20 holdings, vaults and staking boosts through the treasury observer; safe/finalized state is available when requested. Explicit token requests and previously witnessed holdings are rechecked on chain. Retain full evidence and return a compact summary; USD books and NFT coverage remain incomplete. No signing.',inputSchema:{type:'object',properties:{finality:{type:'string',enum:['latest','safe','finalized']},tokens:{type:'array',maxItems:BASE_SPOT.maximumObservedTokens,uniqueItems:true,items:{type:'string',pattern:'^0x[0-9a-fA-F]{40}$'}}},additionalProperties:false}},
  {name:'base_fleet_reconcile',description:'Recover the existing 0x224 pending transaction by its original hash, canonical finalized receipt and recorded outcome. No signing or broadcast. Exact finalized ETH/USDC/WETH quantities and receipt fees must reconcile before effect custody clears. USD profit remains unclaimed without cost basis.',inputSchema:empty},
  {name:'base_fleet_quote_native_usdc',description:'Observe an executable native ETH to native USDC Uniswap quote for 0x224 at one block. Persist the quote; no signing or venue write.',inputSchema:{type:'object',properties:{amountInWei:{type:'string',pattern:'^[0-9]{1,78}$'},fee:{type:'integer',enum:[100,500,3000,10000]}},required:['amountInWei'],additionalProperties:false}},
  {name:'base_fleet_prepare_native_usdc',description:'Prepare a recorded native ETH to USDC quote with fixed-block simulation and rollup fee reserves. Returns an unsigned transaction; current mandate admission and pending nonce checks remain required.',inputSchema:{type:'object',properties:{quoteReference:{type:'string',pattern:'^ni:///sha-256;[A-Za-z0-9_-]{43}$'},minimumOutputAtomic:{type:'string',pattern:'^[0-9]{1,78}$'},deadline:{type:'integer'}},required:['quoteReference','minimumOutputAtomic','deadline'],additionalProperties:false}},
@@ -76,20 +76,19 @@ export function tradingFleetNetworkSources({environment,config}){
    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!Object.hasOwn(tool.inputSchema.properties,key)))throw new TypeError('exact-fleet-read-arguments-required');
    let value;
    if(tool.name==='base_fleet_read_record')value=await readBaseFleetRecordWindow({directory:join(root,'evm','observations'),...input});
-   else if(tool.name==='base_fleet_observe_portfolio'){
-    const portfolio=await observePortfolio({roster:[{subject:'YANAGI',address:BASE_SPOT.address}],chains:[chain('base')],finality:'finalized',timeoutMs:15000});
+   else if(tool.name==='base_fleet_observe'){
+    if(Object.hasOwn(input,'tokens')&&(!Array.isArray(input.tokens)||input.tokens.length>BASE_SPOT.maximumObservedTokens||input.tokens.some(token=>typeof token!=='string'||!/^0x[0-9a-fA-F]{40}$/.test(token))||new Set(input.tokens.map(token=>token.toLowerCase())).size!==input.tokens.length))throw new TypeError('bounded-unique-base-token-request-required');
+    const selection=Object.hasOwn(input,'tokens')?{tokens:input.tokens,sourceFleetRecords:[],explicit:true}:await discoverObservedBaseTokens({directory:join(root,'evm','observations'),address:BASE_SPOT.address,maxTokens:BASE_SPOT.maximumObservedTokens});
+    const tokens=[...new Set([...selection.tokens,BASE_SPOT.usdc,BASE_SPOT.wrappedEther].map(token=>token.toLowerCase()))].sort();
+    const discovered={chain:'base',address:BASE_SPOT.address,checked:selection.explicit===true||selection.discovery?.status==='discovered',scope:selection.explicit?'declared-token-request':'current-discovery-and-prior-witnesses',discovered:tokens.map(tokenAddress=>({tokenAddress,claimedSymbol:null,claimedRawBalance:null})),...(selection.discovery?.status==='unavailable'?{reason:selection.discovery.reason,attempts:selection.discovery.attempts}:{}),sourceFleetRecords:selection.sourceFleetRecords};
+    const portfolio=await observePortfolio({roster:[{subject:'YANAGI',address:BASE_SPOT.address}],chains:[chain('base')],finality:input.finality??'latest',timeoutMs:15000},{observeTokens:(descriptor,address,options)=>verifiedTokenHoldings(descriptor,address,{...options,discovery:discovered})});
     const summary={components:portfolio.chains.map(item=>({chain:item.chain,boundary:item.provenance,coverage:item.coverage,wallets:(item.wallets??[]).map(wallet=>({address:wallet.address,nativeChecked:wallet.native?.checked===true,tokensChecked:wallet.verifiedTokens?.checked===true,verifiedTokens:wallet.verifiedTokens?.holdings?.length??null,positionsChecked:wallet.beefyPositions?.checked===true,positionCandidates:wallet.beefyPositions?.positions?.length??null,verifiedVaultPositions:wallet.beefyPositions?.positions?.filter(position=>position.checked===true&&position.positionKind==='auto-compounding-vault').length??null,verifiedBoostPositions:wallet.beefyPositions?.positions?.filter(position=>position.checked===true&&position.positionKind==='staking-boost').length??null,unresolvedPositionCandidates:wallet.beefyPositions?.positions?.filter(position=>position.checked!==true).length??null}))})),sourceCoverage:portfolio.coverage,fullWallet:false,usdValuation:false,nftPositionsObserved:false,riskBooksEstablished:false,orderEffect:false};
-    const body={type:'BaseTreasuryPortfolioObservation',chainId:8453,address:BASE_SPOT.address,observedAt:portfolio.observedAt,portfolio,summary};
+    const body={type:'BaseTreasuryPortfolioObservation',chainId:8453,address:BASE_SPOT.address,observedAt:portfolio.observedAt,tokenSelection:{method:discovered.scope,sourceFleetRecords:selection.sourceFleetRecords,fullWallet:false},portfolio,summary};
     const stored=await persist('evm',{id:baseSpotRecordId(body),...body});
     const {portfolio:complete,...compact}=stored;value=compact;
    }
    else if(tool.name==='kalshi_fleet_reconcile')value=await reconcileDeskOrderEffects({env:environment});
-   else if(tool.name==='base_fleet_observe'){
-    const selection=Object.hasOwn(input,'tokens')?{tokens:input.tokens,sourceFleetRecords:[]}:await discoverObservedBaseTokens({directory:join(root,'evm','observations'),address:BASE_SPOT.address,maxTokens:BASE_SPOT.maximumObservedTokens});
-    const account=verifyBaseSpotRecord(await base.readAccount({tokens:selection.tokens})),{id,...body}=account;
-    const observation={...body,tokenSelection:{method:Object.hasOwn(input,'tokens')?'explicit-request':'current-indexer-and-previously-witnessed-holdings',sourceFleetRecords:selection.sourceFleetRecords,...(selection.discovery?{discovery:selection.discovery}:{}),fullWallet:false}};
-    value=await persist('evm',{id:baseSpotRecordId(observation),...observation});
-   }else if(tool.name==='base_fleet_reconcile')value=await recoverBase();
+   else if(tool.name==='base_fleet_reconcile')value=await recoverBase();
    else if(tool.name==='base_fleet_quote_native_usdc'){
     if(typeof input.amountInWei!=='string'||!/^\d{1,78}$/.test(input.amountInWei))throw new TypeError('bounded-native-input-required');
     value=await persist('evm',await base.quoteNativeToUsdc(input));
