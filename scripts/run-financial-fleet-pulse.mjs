@@ -57,6 +57,21 @@ export async function runFinancialFleetPulse({environment=process.env,clock=()=>
     results[venue]={status:'refused',evidence:receipt.id,reason:error.message,...(venue==='base'?{recovery:baseRecovery}:venue==='kalshi'?{recovery:kalshiRecovery}:{})};
    }
   }));
+  // Protocol positions use the upstream treasury carrier, independent of spot balances.
+  let portfolioResult;
+  try{
+   const observed=await source.client.call('base_fleet_observe_portfolio',{});
+   const stored=await readBaseFleetRecord({directory:join(root,'evm','observations'),reference:observed.id});
+   const {portfolio,...compact}=stored;
+   const {venue,fleetRecord,...returned}=observed;
+   if(venue!=='evm'||fleetRecord!==stored.id||stored.type!=='BaseTreasuryPortfolioObservation'||!isDeepStrictEqual(compact,returned))throw new TypeError('persisted-base-portfolio-observation-mismatch');
+   const evidence=custody.record({category:'venue-observation',record:{venue:'base',tool:'base_fleet_observe_portfolio',observed:{...compact,completeObservationReference:stored.id}},recordedAt:clock(),told:{for:true,against:false}}).id;
+   portfolioResult={status:'observed',evidence,fleetRecord:stored.id,summary:stored.summary};
+  }catch(error){
+   const evidence=custody.record({category:'venue-observation-refusal',record:{venue:'base',tool:'base_fleet_observe_portfolio',reason:error.message},recordedAt:clock(),told:{for:true,against:false}}).id;
+   portfolioResult={status:'refused',evidence,reason:error.message};
+  }
+  results.base.portfolio=portfolioResult;
   if(!reference)results.alpaca={status:'not-configured',reason:'production-observation-grant-reference-absent'};
   let alpacaExecution;
   try{alpacaExecution=await source.client.call('alpaca_live_run_fleet_cycle',{});}

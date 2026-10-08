@@ -28,7 +28,7 @@
     "@red-cup-engineering/mandate-portfolio-allocation-service": "workspace:*",
     "@red-cup-engineering/node-job-service": "workspace:*",
     "@red-cup-engineering/feltos": "workspace:*",
-    "@red-cup-engineering/treasury-observation-service": "0.5.0"
+    "@red-cup-engineering/treasury-observation-service": "0.5.1"
   },
   "exports": {
     ".": "./src/group-operations.mjs",
