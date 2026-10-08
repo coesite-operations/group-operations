@@ -7,7 +7,6 @@
     "@red-cup-engineering/activitypub-services-section": "workspace:*",
     "@red-cup-engineering/alpaca-principal-actuation-service": "workspace:*",
     "@red-cup-engineering/computer-code-development-engine": "workspace:*",
-    "@red-cup-engineering/computer-data-engineering-services-section": "workspace:*",
     "@red-cup-engineering/computer-inference-engine": "workspace:*",
     "@red-cup-engineering/computer-system-engine": "workspace:*",
     "@red-cup-engineering/ethereum-engineering-services-section": "workspace:*",
@@ -28,7 +27,8 @@
     "@red-cup-engineering/mandate-portfolio-allocation-service": "workspace:*",
     "@red-cup-engineering/node-job-service": "workspace:*",
     "@red-cup-engineering/feltos": "workspace:*",
-    "@red-cup-engineering/treasury-observation-service": "0.5.1"
+    "@red-cup-engineering/treasury-observation-service": "0.5.1",
+    "@red-cup-engineering/exact-number-data-service": "workspace:*"
   },
   "exports": {
     ".": "./src/group-operations.mjs",

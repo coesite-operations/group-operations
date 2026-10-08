@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { open, posting, transaction } from "@red-cup-engineering/organizing/accounting/ledger";
-import { gradedOfDecimal, gradedToDecimalString } from "@red-cup-engineering/computer-data-engineering-services-section/number/graded";
+import { gradedOfDecimal, gradedToDecimalString } from "@red-cup-engineering/exact-number-data-service/graded";
 import { movementClassesOf } from "../src/chain-classification.mjs";
 import { composeGroupFinancialReadout } from "../src/group-financial-readout.mjs";
 import { parseJournalText } from "@red-cup-engineering/farolfi/journal";

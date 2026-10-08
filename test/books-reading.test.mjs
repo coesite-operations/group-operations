@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { gradedOfDecimal } from "@red-cup-engineering/computer-data-engineering-services-section/number/graded";
+import { gradedOfDecimal } from "@red-cup-engineering/exact-number-data-service/graded";
 import { booksSummaryOf } from "../src/books-reading.mjs";
 import { composeGroupFinancialReadout } from "../src/group-financial-readout.mjs";
 

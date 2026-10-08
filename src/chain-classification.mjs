@@ -9,7 +9,7 @@
 // nothing; a movement the histories do not explain stays unclassified in the book.
 import { parseJournalText } from "@red-cup-engineering/farolfi/journal";
 import { isTransaction } from "@red-cup-engineering/organizing/accounting/ledger";
-import { gradeOf, gradedAdd, gradedIsZero, gradedNegate, gradedOfDecimal, gradedToDecimalString } from "@red-cup-engineering/computer-data-engineering-services-section/number/graded";
+import { gradeOf, gradedAdd, gradedIsZero, gradedNegate, gradedOfDecimal, gradedToDecimalString } from "@red-cup-engineering/exact-number-data-service/graded";
 
 export const HIVE_LIQUID_ACCOUNT = "Assets:Digital-Assets:Hive:Liquid";
 export const HIVE_STAKED_ACCOUNT = "Assets:Digital-Assets:Hive:Staked";
