@@ -33,7 +33,7 @@ const venueTools=Object.freeze([
 /** One authenticated fleet entrance on the production host; each venue retains its custody. */
 export function tradingFleetNetworkSources({environment,config}){
  const root=environment.TRADING_FLEET_STATE_DIR??join(homedir(),'.local/state/561-group/trading-fleet');
- const brokerage=openProductionAlpacaBrokerage({stateRoot:environment.ALPACA_LIVE_STATE_DIR??join(root,'alpaca'),custodyRoot:environment.ALPACA_LIVE_CUSTODY_DIR??join(homedir(),'.config/561-group/alpaca-live-custody')});
+ const brokerage=openProductionAlpacaBrokerage({stateRoot:environment.ALPACA_LIVE_STATE_DIR??join(root,'alpaca'),custodyRoot:environment.ALPACA_LIVE_CUSTODY_DIR,env:environment});
  const alpaca=createAlpacaLiveMcp({brokerage});
  const base=createBaseSpotAdapter({readPool:createPublicEvmReadPool({chain:BASE_PUBLIC_EVM_CHAIN,providers:BASE_PUBLIC_EVM_PROVIDERS,maxAttemptsPerProvider:1,maxCallsPerOperation:BASE_PUBLIC_EVM_PROVIDERS.length*(BASE_SPOT.maximumObservedTokens+8)})});
  const recoverBase=async()=>{
