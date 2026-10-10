@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { corroborateMarketSellerSettlements } from "@red-cup-engineering/x402-services-section/seller-settlements";
+import { corroborateMarketSellerSettlements, heldSellerSettlements, recordSellerSettlements } from "@red-cup-engineering/x402-services-section/seller-settlements";
 import { composeGroupFinancialReadout, writeGroupFinancialReadout } from "@561-group/group-operations/group-financial-readout";
 import { entityBooks } from "@red-cup-engineering/organizing/enterprise";
 import { outcomeJournal } from "@red-cup-engineering/organizing/enterprise";
@@ -64,9 +64,13 @@ export async function produceGroupFinancialReadout({ environment = process.env, 
   let sellerBooking = null;
   try {
     const corroboration = await corroborateMarketSellerSettlements({ environment, now: () => new Date(asOf) });
-    const books = await writeSellerPaymentBooks(requiredEnvironment("METROPLAT_DATA_ROOT", environment), corroboration, { booked: await bookedSourcesOf(ledgerPath) });
+    // Each corroborated transfer is kept in the node's one log first; the cash books project
+    // what the log holds, so a partial provider read neither loses nor erases a transfer.
+    const dataRoot = requiredEnvironment("METROPLAT_DATA_ROOT", environment);
+    const kept = recordSellerSettlements(dataRoot, corroboration.settlements);
+    const books = await writeSellerPaymentBooks(dataRoot, corroboration, { booked: await bookedSourcesOf(ledgerPath), held: heldSellerSettlements(dataRoot) });
     const { settlements, ...observed } = corroboration;
-    sellerBooking = { ...observed, type: "X402SellerPaymentObservation", books, outcomeCount: 0,
+    sellerBooking = { ...observed, type: "X402SellerPaymentObservation", kept: { corroborated: kept.kept, appended: kept.appended }, books, outcomeCount: 0,
       customerAcceptance: "unobserved", revenueRecognized: false };
 
   } catch (error) {
