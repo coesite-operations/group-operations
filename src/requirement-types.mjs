@@ -6,7 +6,7 @@
  * The plain-JSON form these succeed is requirement.schema.json (2026-07), migrated into the
  * requirement management section as the legacy form a converter reads.
  */
-import { defineSchemaType } from "@red-cup-engineering/computer-data-services-section/type-system/schema-type";
+import { defineSchemaType } from "@red-cup-engineering/computer-data-engineering-services-section/type-system/schema-type";
 
 const BASE = "https://561.group/schema/requirement-management";
 const text = { type: "string", minLength: 1 };
