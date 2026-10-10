@@ -45,7 +45,8 @@
     "./work-arena-law-operation": "./src/work-arena-law-operation.mjs",
     "./trading-fleet-network": "./src/trading-fleet-network.mjs",
     "./trading-fleet-operations": "./src/trading-fleet-operations.mjs",
-    "./weather-network": "./src/weather-network.mjs"
+    "./weather-network": "./src/weather-network.mjs",
+    "./primary-health": "./src/primary-health.mjs"
   },
   "name": "@561-group/group-operations",
   "private": true,
