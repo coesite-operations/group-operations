@@ -2,11 +2,12 @@
 //
 // Each pulse probes the primary systems and tells each one's state with the house's four charges:
 // held (it answers), denied (it does not), contested (it answers honestly that it is unavailable:
-// 503 with Retry-After), unknown (not probed). A change of charge is recorded as a semantic record,
+// 503 with Retry-After), unknown (not probed). Changes of charge or release evidence are recorded,
 // so the journal grows with what changed, not with every pulse, and the current reading is written
 // as a public status document and page that the node's web server serves as the fallback status.
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 /** The primary systems a pulse reads by default: the machines, then every public property. */
 export const PRIMARY_HEALTH_TARGETS = Object.freeze([
@@ -38,6 +39,35 @@ const TOLD = Object.freeze({
   unknown: Object.freeze({ for: false, against: false }),
 });
 
+// The latest receipt describes an attempt, not necessarily the release that is running.
+// Keep the public producer's scalar fields exactly, including false/empty legacy values.
+const DEPLOYMENT_FIELDS = Object.freeze([
+  "outcome", "machine", "revision", "repository", "run", "runAttempt", "stage", "at",
+  "reason", "storePath", "previous", "retained",
+]);
+const isScalar = (value) => value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value));
+
+function deploymentOf(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const fields = DEPLOYMENT_FIELDS.filter((key) => Object.hasOwn(value, key) && isScalar(value[key]));
+  return fields.length === 0 ? undefined : Object.freeze(Object.fromEntries(fields.map((key) => [key, value[key]])));
+}
+
+function sourcesOf(value) {
+  if (value === null) return null;
+  if (!Array.isArray(value)) return undefined;
+  const fields = ["repository", "commit", "url"];
+  // A malformed source list is unknown; dropping malformed entries would assert a smaller set.
+  if (!value.every((source) => source !== null && typeof source === "object" && !Array.isArray(source)
+    && fields.every((key) => Object.hasOwn(source, key) && typeof source[key] === "string"))) return undefined;
+  return Object.freeze(value.map((source) => Object.freeze(Object.fromEntries(fields.map((key) => [key, source[key]])))));
+}
+
+function releaseEvidenceOf(system) {
+  const deployment = Object.fromEntries(Object.entries(system.deployment ?? {}).filter(([key]) => key !== "at"));
+  return { release: system.release, artifact: system.artifact, sources: system.sources, deployment };
+}
+
 /** Probe one target once: its status, its Retry-After, and, for a machine, what its health body reports. */
 async function answerOf(target, { probe, timeoutMs }) {
   try {
@@ -48,8 +78,13 @@ async function answerOf(target, { probe, timeoutMs }) {
     if (target.kind === "machine" && response.status < 400) {
       try {
         const body = await response.json();
-        if (body?.release !== undefined) answer.release = String(body.release);
-        if (body?.deployment?.outcome !== undefined) answer.deployment = { outcome: String(body.deployment.outcome), ...(body.deployment.stage ? { stage: String(body.deployment.stage) } : {}), ...(body.deployment.at ? { at: String(body.deployment.at) } : {}), ...(body.deployment.run ? { run: String(body.deployment.run) } : {}) };
+        for (const key of ["release", "artifact"]) {
+          if (body?.[key] === null || typeof body?.[key] === "string") answer[key] = body[key];
+        }
+        const sources = sourcesOf(body?.sources);
+        if (sources !== undefined) answer.sources = sources;
+        const deployment = deploymentOf(body?.deployment);
+        if (deployment !== undefined) answer.deployment = deployment;
       } catch { /* a machine whose health is not JSON still answered */ }
     } else {
       await response.body?.cancel?.();
@@ -70,12 +105,12 @@ export async function readPrimaryHealth({ targets = PRIMARY_HEALTH_TARGETS, prob
   return Object.freeze({ at, systems: Object.freeze(systems) });
 }
 
-/** The systems whose charge differs from the previous reading (every system when there is none). */
+/** Changes of charge or release evidence, ignoring pulse/receipt timestamps alone. */
 export function primaryHealthChanges(previous, current) {
   const before = new Map((previous?.systems ?? []).map((system) => [system.id, system]));
   return current.systems.filter((system) => {
     const was = before.get(system.id);
-    return was === undefined || was.charge !== system.charge || was.deployment?.outcome !== system.deployment?.outcome;
+    return was === undefined || was.charge !== system.charge || !isDeepStrictEqual(releaseEvidenceOf(was), releaseEvidenceOf(system));
   }).map((system) => Object.freeze({ ...system, was: before.get(system.id)?.charge ?? "unknown" }));
 }
 
@@ -84,7 +119,7 @@ const WORD = Object.freeze({ held: "answering", denied: "not answering", contest
 
 /** The public status page of one reading. */
 export function renderPrimaryHealthPage(status) {
-  const rows = status.systems.map((system) => `<tr class="${system.charge}"><td><a href="${escape(system.url)}">${escape(system.id)}</a></td><td>${WORD[system.charge]}</td><td>${escape(system.status ?? system.error ?? "")}${system.deployment ? ` &middot; last deployment ${escape(system.deployment.outcome)}${system.deployment.stage ? ` at ${escape(system.deployment.stage)}` : ""}` : ""}</td><td>${escape(system.since ?? "")}</td></tr>`).join("\n");
+  const rows = status.systems.map((system) => `<tr class="${system.charge}"><td><a href="${escape(system.url)}">${escape(system.id)}</a></td><td>${WORD[system.charge]}</td><td>${escape(system.status ?? system.error ?? "")}${system.deployment ? ` &middot; last deployment receipt ${escape(system.deployment.outcome ?? "unknown")}${system.deployment.stage ? ` at ${escape(system.deployment.stage)}` : ""}` : ""}</td><td>${escape(system.since ?? "")}</td></tr>`).join("\n");
   const down = status.systems.filter((system) => system.charge !== "held").length;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -111,7 +146,7 @@ async function readJson(path) {
 }
 
 /**
- * Read the primary systems, record every change of charge in the journal, and write the public
+ * Read the primary systems, record every change of charge or release evidence, and write the public
  * status document and page. Returns the reading and the changes it recorded.
  */
 export async function runPrimaryHealthPulse({ statusDirectory, journal, targets, probe, clock, timeoutMs } = {}) {
@@ -128,6 +163,8 @@ export async function runPrimaryHealthPulse({ statusDirectory, journal, targets,
     const record = journal?.record({ category: "primary-system-health", recordedAt: reading.at, told: TOLD[change.charge],
       record: { system: change.id, kind: change.kind, url: change.url, charge: change.charge, was: change.was,
         ...(change.status === undefined ? {} : { status: change.status }), ...(change.error === undefined ? {} : { error: change.error }),
+        ...(change.release === undefined ? {} : { release: change.release }), ...(change.artifact === undefined ? {} : { artifact: change.artifact }),
+        ...(change.sources === undefined ? {} : { sources: change.sources }),
         ...(change.deployment === undefined ? {} : { deployment: change.deployment }) } });
     recorded.push(Object.freeze({ system: change.id, charge: change.charge, was: change.was, ...(record?.id === undefined ? {} : { evidence: record.id }) }));
   }
