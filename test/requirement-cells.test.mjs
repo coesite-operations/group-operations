@@ -11,6 +11,7 @@ import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
 import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
 import { addressHolds, addressed, carryToJuly, julyTypes, lostFrom, uncarried } from "../src/requirement-july.mjs";
 import { readPools, writeJuly } from "../src/requirement-pools.mjs";
+import { requirementOperations } from "../src/requirement-operations.mjs";
 import { fileURLToPath } from "node:url";
 
 const SCHEMAS = fileURLToPath(new URL("./fixtures/july-schemas/", import.meta.url));
@@ -186,7 +187,7 @@ test("a design rule's baseline holds today's violations contested, and refuses o
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
 });
 
-test("the codemod carries requirements, rulings and breaks into the July forms as addressed typed marks", () => {
+test("the codemod carries requirements, rulings and breaks into the July forms as addressed typed marks", async () => {
   const { root, keys } = repository();
   try {
     recordGoverning({ kind: REQUIREMENT, input: requirement(), repositoryRoot: root, seat: SEAT, keyDirectory: keys });
@@ -222,6 +223,10 @@ test("the codemod carries requirements, rulings and breaks into the July forms a
     assert.equal(pools.requirements.length, 1);
     assert.equal(pools.rulings.length, 1);
     assert.equal(pools.rulings[0].body.ruling, "Everything is signed, cell-typed data.");
+    // The node's requirements operation reads the same pools the loop reads.
+    const requirements = requirementOperations({ dataRoot: mkdtempSync(join(tmpdir(), "node-")), schemaDirectory: SCHEMAS }).find((o) => o.verb === "requirements");
+    assert.deepEqual((await requirements.execute({ repositoryRoot: root })).records.map((r) => r.body.id), pools.requirements.map((r) => r.body.id));
+    assert.equal((await requirements.execute({ repositoryRoot: root, kind: "ruling" })).records[0].body.ruling, "Everything is signed, cell-typed data.");
     // A ruling's decision corrected by the team (re-addressed) survives a later carry.
     const decisionPath = join(root, REQUIREMENT_SECTION, "content", "decision-records", "everything-is-cell-typed-decision.json");
     const decision = JSON.parse(readFileSync(decisionPath, "utf8"));
