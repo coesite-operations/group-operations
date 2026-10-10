@@ -29,6 +29,7 @@ import { cell } from "@red-cup-engineering/signcell/cell";
 import { chargeOfTold, createSemanticRecordJournal } from "@red-cup-engineering/semiotic-eavt-services-section/record-semantic-record";
 import { openingOf } from "@red-cup-engineering/organizing/enterprise";
 import { contributionsOf } from "./requirement-orders.mjs";
+import { readPools } from "./requirement-pools.mjs";
 import { CATEGORY, READING, REQUIREMENT, RULING, admitSigned, readGoverning, registerSeatKey, seatKey, signed } from "./requirement-cells.mjs";
 
 export const MAINTENANCE_TAG = "requirement-maintenance";
@@ -43,6 +44,10 @@ export const REQUIREMENTS_BIN = fileURLToPath(new URL("../scripts/requirements.m
 
 /** Run one check in `cwd` and read it as evidence. */
 export function exercise(check, { cwd, timeoutMs = CHECK_TIMEOUT_MS, env = { ...process.env, GROUP_REQUIREMENTS_BIN: REQUIREMENTS_BIN } } = {}) {
+  // A condition no command settles tells nothing either way: it reads unknown until one is stated.
+  if (typeof check.command !== "string" || check.command === "") {
+    return Object.freeze({ cell: check.cell, exit: null, exercises: check.exercises, charge: "unknown", told: Object.freeze({ for: [], against: [] }) });
+  }
   const run = spawnSync("/bin/sh", ["-c", check.command], { cwd, env, encoding: "utf8", timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 });
   const exit = run.error ? null : run.status;
   const tail = `${run.stderr ?? ""}${run.stdout ?? ""}`.trim().slice(-300);
@@ -158,14 +163,16 @@ export function openingOfRuling(read, { poster, at }) {
  * One turn of the loop: read every requirement and ruling under `repositoryRoot`, record each reading
  * as `seat` into `journalRoot`, and derive the openings the board should hold.
  */
-export function maintainRequirements({ repositoryRoot, journalRoot, seat, poster, at = new Date().toISOString(), keyDirectory, timeoutMs, only }) {
+export function maintainRequirements({ repositoryRoot, journalRoot, seat, poster, at = new Date().toISOString(), keyDirectory, timeoutMs, only, schemaDirectory }) {
   const scratch = mkdtempSync(join(tmpdir(), "requirement-maintenance-"));
   try {
     mkdirSync(journalRoot, { recursive: true });
     const key = seatKey(seat, { directory: keyDirectory });
     registerSeatKey({ root: journalRoot, key, at });
-    const requirements = readGoverning({ repositoryRoot, kind: REQUIREMENT, scratch: join(scratch, "requirements") });
-    const rulings = readGoverning({ repositoryRoot, kind: RULING, scratch: join(scratch, "rulings") });
+    // The July requirement management system's pools are the one place requirements and rulings are read.
+    const pools = readPools({ repositoryRoot, ...(schemaDirectory ? { schemaDirectory } : {}) });
+    const requirements = { records: pools.requirements, refused: pools.refused.map((refusal) => ({ body: { id: refusal.path }, source: refusal.path, signature: { reason: refusal.reason } })) };
+    const rulings = { records: pools.rulings, refused: [] };
     const selected = requirements.records.filter((record) => only === undefined || only.includes(record.body.id));
     const readings = selected.map((requirement) => readRequirement(requirement, { cwd: repositoryRoot, key, journalRoot, at, timeoutMs }));
     const chargeOf = new Map(readings.map((reading) => [reading.requirement.body.id, reading.charge]));

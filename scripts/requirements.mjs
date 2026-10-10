@@ -6,6 +6,7 @@
  *   group-requirements record-requirement --seat SEAT [--repository ROOT] < requirement.json
  *   group-requirements record-ruling      --seat SEAT [--repository ROOT] < ruling.json
  *   group-requirements read [--kind requirement|ruling] [--repository ROOT]
+ *   group-requirements carry-to-july --seat SEAT [--repository ROOT] [--schemas DIR]   (the codemod into the July pools)
  *   group-requirements convert --seat SEAT [--repository ROOT]
  *   group-requirements maintain --seat SEAT --journal DIR [--repository ROOT] [--only id,id]
  *   group-requirements check-pull-request [--repository ROOT] < pull-request-body.md
@@ -26,11 +27,14 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
-import { REQUIREMENT, RULING, readGoverning, recordGoverning } from "../src/requirement-cells.mjs";
+import { REQUIREMENT, RULING, readGoverning, recordGoverning, requirementOf, rulingOf } from "../src/requirement-cells.mjs";
+import { carryToJuly, julyRequirementOf, julyRulingOf } from "../src/requirement-july.mjs";
+import { readPools, writeJuly } from "../src/requirement-pools.mjs";
+import { REQUIREMENT_SECTION } from "../src/requirement-cells.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { maintainRequirements } from "../src/requirement-maintenance.mjs";
 import { pullRequestOrder } from "../src/requirement-orders.mjs";
-import { detect, plainRecordFiles, recordAssemblyBreak, recordBaseline, unorderedMerges, DRC5_ADOPTED } from "../src/requirement-rules.mjs";
+import { detect, plainRecordFiles, recordAssemblyBreakJuly, recordBaseline, unorderedMerges, DRC5_ADOPTED } from "../src/requirement-rules.mjs";
 
 const [command, ...rest] = process.argv.slice(2);
 const options = {};
@@ -52,16 +56,42 @@ const readAll = (kind) => {
 
 try {
   switch (command) {
-    case "record-requirement":
+    case "record-requirement": {
+      // Recorded in the July requirements management team's form, in the section that owns its outcome.
+      const at = new Date().toISOString();
+      const { body } = requirementOf(JSON.parse(stdin()));
+      const record = julyRequirementOf({ body, recordedAt: at, signature: { seat: seat() } }, { seat: seat() });
+      print(writeJuly({ repositoryRoot: repositoryRoot(), kind: "requirement", record, path: `${body.section}/content/requirements/${body.id}.json`, seat: seat(), at }));
+      break;
+    }
+    case "record-requirement-journal":
+      // The journal form, kept until every reader has moved to the July pools.
       print(recordGoverning({ kind: REQUIREMENT, input: JSON.parse(stdin()), repositoryRoot: repositoryRoot(), seat: seat() }));
       break;
-    case "record-ruling":
-      print(recordGoverning({ kind: RULING, input: JSON.parse(stdin()), repositoryRoot: repositoryRoot(), seat: seat() }));
+    case "record-ruling": {
+      const at = new Date().toISOString();
+      const { body } = rulingOf(JSON.parse(stdin()));
+      const { decision, ruling } = julyRulingOf({ body, recordedAt: at, signature: { seat: seat() } });
+      print([writeJuly({ repositoryRoot: repositoryRoot(), kind: "decision-record", record: decision, path: `${REQUIREMENT_SECTION}/content/decision-records/${decision.id}.json`, seat: seat(), at }),
+        writeJuly({ repositoryRoot: repositoryRoot(), kind: "ruling", record: ruling, path: `${REQUIREMENT_SECTION}/content/rulings/${ruling.id}.json`, seat: seat(), at })]);
+      break;
+    }
       break;
     case "read": {
-      const { records, refused } = readAll(options.kind === "ruling" ? RULING : REQUIREMENT);
+      const pools = readPools({ repositoryRoot: repositoryRoot() });
+      const records = options.kind === "ruling" ? pools.rulings : pools.requirements;
+      const refused = pools.refused;
       print({ records: records.map((record) => ({ id: record.body.id, section: record.body.section, charge: record.charge, address: record.address,
         seat: record.signature.seat, trust: record.signature.trust, recordedAt: record.recordedAt, ...(options.full ? { body: record.body, cell: record.cell } : {}) })), refused });
+      break;
+    }
+    case "carry-to-july": {
+      // The codemod: every journal requirement, ruling and assembly break into the July pools.
+      const scratch = mkdtempSync(join(tmpdir(), "group-requirements-"));
+      try { const carried = carryToJuly({ repositoryRoot: repositoryRoot(), seat: seat(), scratch, ...(options.schemas ? { schemaDirectory: resolve(options.schemas) } : {}) });
+        print({ requirements: carried.requirements.length, rulings: carried.rulings.length, decisions: carried.decisions.length, attestations: carried.attestations.length, refused: carried.refused });
+        if (carried.refused.length > 0) process.exitCode = 1;
+      } finally { rmSync(scratch, { recursive: true, force: true }); }
       break;
     }
     case "convert":
@@ -76,14 +106,15 @@ try {
       break;
     }
     case "check-pull-request": {
-      const verdict = pullRequestOrder({ body: stdin(), requirements: readAll(REQUIREMENT).records });
+      const pools = readPools({ repositoryRoot: repositoryRoot() });
+      const verdict = pullRequestOrder({ body: stdin(), requirements: pools.requirements, rulings: pools.rulings });
       print(verdict);
       if (!verdict.ok) process.exitCode = 1;
       break;
     }
     case "brief": {
       // The rulings in force, verified, for a session to load at its start (--hook: as a SessionStart answer).
-      const { records } = readAll(RULING);
+      const records = readPools({ repositoryRoot: repositoryRoot() }).rulings;
       const lines = [
         "The founder's standing rulings, as signed cells (group-requirements read --kind ruling):",
         ...records.map((record) => `- ${record.body.id} (${record.charge}): ${record.body.ruling}`),
@@ -97,7 +128,7 @@ try {
     }
     case "record-break": {
       const scratch = mkdtempSync(join(tmpdir(), "group-requirements-"));
-      try { print(recordAssemblyBreak({ repositoryRoot: repositoryRoot(), input: JSON.parse(stdin()), seat: seat(), scratch })); } finally { rmSync(scratch, { recursive: true, force: true }); }
+      try { print(recordAssemblyBreakJuly({ repositoryRoot: repositoryRoot(), input: JSON.parse(stdin()), seat: seat() })); } finally { rmSync(scratch, { recursive: true, force: true }); }
       break;
     }
     case "baseline": {
@@ -117,7 +148,7 @@ try {
       break;
     }
     default:
-      throw new TypeError("commands: record-requirement, record-ruling, read, convert, maintain, check-pull-request, brief, record-break, baseline, drc");
+      throw new TypeError("commands: record-requirement, record-ruling, record-break, read, maintain, check-pull-request, brief, baseline, drc, carry-to-july, convert, record-requirement-journal");
   }
 } catch (error) {
   process.stderr.write(`group-requirements: ${error.message}\n`);

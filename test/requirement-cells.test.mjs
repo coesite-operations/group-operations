@@ -2,13 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { REQUIREMENT, RULING, existenceOnly, readGoverning, recordGoverning } from "../src/requirement-cells.mjs";
 import { exercise, maintainRequirements, readingsOf } from "../src/requirement-maintenance.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
-import { detect, plainRecordFiles, recordAssemblyBreak, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
+import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
+import { addressHolds, carryToJuly, julyTypes, lostFrom } from "../src/requirement-july.mjs";
+import { readPools } from "../src/requirement-pools.mjs";
+import { fileURLToPath } from "node:url";
+
+const SCHEMAS = fileURLToPath(new URL("./fixtures/july-schemas/", import.meta.url));
 
 const SECTION = "lib/emsenn/services/561-group/services/561-group-services-section";
 const SEAT = `${SECTION}#requirement-maintainer@test`;
@@ -92,7 +97,9 @@ test("the loop reads every requirement, records signed readings, and opens a req
       repositoryRoot: root, seat: SEAT, keyDirectory: keys });
     recordGoverning({ kind: RULING, input: { id: "no-plain-json", section: SECTION, raisedBy: "emsenn", ruling: "Everything is signed, cell-typed data.",
       sources: [{ words: "everything should be signed cell typed data" }], checks: [{ cell: "ruling:holds", command: "false" }] }, repositoryRoot: root, seat: SEAT, keyDirectory: keys });
-    const result = maintainRequirements({ repositoryRoot: root, journalRoot: journal, seat: SEAT, poster: "requirement-maintenance", keyDirectory: keys, at: "2026-10-10T02:00:00.000Z" });
+    // The loop reads the July pools: carry the journal there first.
+    assert.deepEqual(carryToJuly({ repositoryRoot: root, schemaDirectory: SCHEMAS, seat: SEAT, scratch: mkdtempSync(join(tmpdir(), "scratch-")) }).refused, []);
+    const result = maintainRequirements({ repositoryRoot: root, journalRoot: journal, seat: SEAT, poster: "requirement-maintenance", keyDirectory: keys, at: "2026-10-10T02:00:00.000Z", schemaDirectory: SCHEMAS });
     const charges = Object.fromEntries(result.readings.map((reading) => [reading.requirement, reading.charge]));
     assert.deepEqual(charges, { "after-half": "denied", "half-done": "contested", "the-board-holds-the-order": "held" });
     const requests = result.openings.map(({ opening }) => opening).filter((opening) => opening.move === "request");
@@ -176,5 +183,74 @@ test("a design rule's baseline holds today's violations contested, and refuses o
     const verdict = detect({ repositoryRoot: root, rule: "drc-4-signed-cells", scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
     assert.equal(verdict.ok, false);
     assert.deepEqual(verdict.added, [`${SECTION}/data/records/new.json`]);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
+});
+
+test("the codemod carries requirements, rulings and breaks into the July forms as addressed typed marks", () => {
+  const { root, keys } = repository();
+  try {
+    recordGoverning({ kind: REQUIREMENT, input: requirement(), repositoryRoot: root, seat: SEAT, keyDirectory: keys });
+    recordGoverning({ kind: RULING, input: { id: "everything-is-cell-typed", section: SECTION, raisedBy: "emsenn", ruling: "Everything is signed, cell-typed data.",
+      sources: [{ words: "everything should be signed cell typed data", session: "s", at: "2026-10-10" }] }, repositoryRoot: root, seat: SEAT, keyDirectory: keys });
+    const scratch = mkdtempSync(join(tmpdir(), "scratch-"));
+    recordAssemblyBreak({ repositoryRoot: root, seat: SEAT, keyDirectory: keys, scratch, input: { breakClass: "undeclared-import", evidence: ["a"] } });
+    const carried = carryToJuly({ repositoryRoot: root, schemaDirectory: SCHEMAS, seat: SEAT, scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
+    assert.deepEqual(carried.refused, []);
+    assert.equal(carried.requirements.length, 1);
+    assert.deepEqual(carried.rulings, ["everything-is-cell-typed"]);
+    assert.equal(carried.attestations.length, 1);
+    const types = julyTypes(SCHEMAS);
+    const july = JSON.parse(readFileSync(join(root, SECTION, "content", "requirements", "the-board-holds-the-order.json"), "utf8"));
+    assert.equal(july.kind, "requirement");
+    assert.equal(july["raised-by"], "emsenn");
+    assert.equal(july.asks, "everything should be signed cell typed data");
+    assert.equal(addressHolds(types, july), true);
+    // Idempotent: carrying again changes nothing.
+    carryToJuly({ repositoryRoot: root, schemaDirectory: SCHEMAS, seat: SEAT, scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
+    assert.deepEqual(JSON.parse(readFileSync(join(root, SECTION, "content", "requirements", "the-board-holds-the-order.json"), "utf8")), july);
+    const pools = readPools({ repositoryRoot: root, schemaDirectory: SCHEMAS });
+    assert.equal(pools.requirements.length, 1);
+    assert.equal(pools.rulings.length, 1);
+    assert.equal(pools.rulings[0].body.ruling, "Everything is signed, cell-typed data.");
+    // An edited record no longer holds its address and is refused.
+    writeFileSync(join(root, SECTION, "content", "requirements", "the-board-holds-the-order.json"), JSON.stringify({ ...july, asks: "something else" }));
+    assert.equal(readPools({ repositoryRoot: root, schemaDirectory: SCHEMAS }).refused.length, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
+});
+
+test("the codemod keeps every leaf of a held record, addresses a pool record no journal holds, and names any leaf a carry would lose", () => {
+  const { root, keys } = repository();
+  try {
+    const path = join(root, SECTION, "content", "requirements", "held-by-a-node.json");
+    const original = { id: "held-by-a-node", name: "Held by a node", kind: "requirement", "raised-by": "emsenn", asks: "the node recorded this straight into the pool",
+      "met-when": [], tier: "minor", note: "a field the July form does not name", requirements: [{ id: "R1", says: "The pool shall keep it." }], "x-provenance": {} };
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(original));
+    const carried = carryToJuly({ repositoryRoot: root, schemaDirectory: SCHEMAS, seat: SEAT, scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
+    assert.deepEqual(carried.refused, []);
+    assert.deepEqual(carried.requirements, [`${SECTION}/content/requirements/held-by-a-node.json`]);
+    const july = JSON.parse(readFileSync(path, "utf8"));
+    assert.equal(addressHolds(julyTypes(SCHEMAS), july), true);
+    assert.deepEqual(lostFrom(original, july), []);
+    assert.deepEqual(july["x-provenance"]["carried-fields"], { tier: "minor", note: original.note, requirements: original.requirements });
+    assert.ok(july["x-provenance"]["pending-conditions"]);
+    assert.equal(readPools({ repositoryRoot: root, schemaDirectory: SCHEMAS }).requirements[0].charge, "contested");
+    // A carried record missing any leaf of its original is named, leaf by leaf.
+    assert.deepEqual(lostFrom(original, { ...july, "x-provenance": { ...july["x-provenance"], "carried-fields": { tier: "minor" } } }), ["note", "requirements.0.id", "requirements.0.says"]);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
+});
+
+test("a break class attested twice in the July pools files its re-architecture requirement, attested by the seat", () => {
+  const { root, keys } = repository();
+  try {
+    const first = recordAssemblyBreakJuly({ repositoryRoot: root, seat: SEAT, keyDirectory: keys, schemaDirectory: SCHEMAS, input: { breakClass: "divergent-copy", evidence: ["one"] } });
+    assert.equal(first.requirement, undefined);
+    const second = recordAssemblyBreakJuly({ repositoryRoot: root, seat: SEAT, keyDirectory: keys, schemaDirectory: SCHEMAS, input: { breakClass: "divergent-copy", evidence: ["two"] } });
+    assert.equal(second.occurrences, 2);
+    const pools = readPools({ repositoryRoot: root, schemaDirectory: SCHEMAS });
+    assert.deepEqual(pools.refused, []);
+    const filed = pools.requirements.find((read) => read.body.id === reArchitectureIdOf("divergent-copy"));
+    assert.ok(filed);
+    assert.equal(filed.signature.seat, SEAT);
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
 });
