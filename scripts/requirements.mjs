@@ -21,7 +21,7 @@
  * relayed? }], metWhen: [{ cell, command, expectedExit?, says?, exercises? }], tier?, serves?,
  * after?, opening? }. A ruling's: { id, section, raisedBy, ruling (verbatim), sources, checks? }.
  * SEAT names the office and carrier recording it, e.g.
- * emsenn/services/561-group/services/561-group-services-section#requirement-maintainer@claude-session-<id>.
+ * emsenn/services/561-group/services/561-group-services-section#requirements-management-team@claude-session-<id>.
  * The seat's Ed25519 key is kept under GROUP_SEAT_KEY_DIR (default ~/.config/561-group/seats).
  */
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
