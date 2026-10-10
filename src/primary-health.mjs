@@ -1,8 +1,8 @@
 // Primary-system health, read by the always-on node and carried to the Group's fallbacks.
 //
 // Each pulse probes the primary systems and tells each one's state with the house's four charges:
-// held (it answers), denied (it does not), contested (it answers honestly that it is unavailable:
-// 503 with Retry-After), unknown (not probed). Changes of charge or release evidence are recorded,
+// Properties report HTTP availability. Machines additionally require their explicit readiness
+// claim. Changes of charge, readiness or release evidence are recorded,
 // so the journal grows with what changed, not with every pulse, and the current reading is written
 // as a public status document and page that the node's web server serves as the fallback status.
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -28,6 +28,8 @@ export const PRIMARY_HEALTH_TARGETS = Object.freeze([
 export function chargeOf(answer) {
   if (answer === undefined) return "unknown";
   if (answer.status === undefined) return "denied";
+  if (answer.readiness?.state === "failed") return "denied";
+  if (answer.status < 400 && answer.readiness?.state === "unknown") return "unknown";
   if (answer.status < 400) return "held";
   if (answer.status === 503 && answer.retryAfter !== undefined) return "contested";
   return "denied";
@@ -47,6 +49,29 @@ const DEPLOYMENT_FIELDS = Object.freeze([
   "reason", "storePath", "previous", "retained",
 ]);
 const isScalar = (value) => value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value));
+
+/** Read explicit machine readiness without inferring an actor requirement for every machine. */
+export function machineReadiness(body) {
+  const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+  if (!object(body)) return Object.freeze({ state: "unknown", reason: "missing-machine-health" });
+  const actor = body.nativeActor;
+  const evidence = {
+    ...(Object.hasOwn(body, "ok") && isScalar(body.ok) ? { ok: body.ok } : {}),
+    ...(Object.hasOwn(body, "state") && isScalar(body.state) ? { serviceState: body.state } : {}),
+    ...(object(actor) && Object.hasOwn(actor, "ok") && isScalar(actor.ok) ? { nativeActorOk: actor.ok } : {}),
+  };
+  if (body.ok === false || actor?.ok === false || ["failed", "unready", "stopped"].includes(body.state))
+    return Object.freeze({ state: "failed", reason: "machine-reports-unready", ...evidence });
+  if (body.ok !== true)
+    return Object.freeze({ state: "unknown", reason: "missing-readiness-claim", ...evidence });
+  // The selected producer accepts ready/degraded and emits failed/unready on
+  // explicit failures. Other present states cannot be inferred ready.
+  if (Object.hasOwn(body, "state") && !["ready", "degraded"].includes(body.state))
+    return Object.freeze({ state: "unknown", reason: "indeterminate-machine-state", ...evidence });
+  if (Object.hasOwn(body, "nativeActor") && (!object(actor) || typeof actor.ok !== "boolean"))
+    return Object.freeze({ state: "unknown", reason: "indeterminate-native-actor", ...evidence });
+  return Object.freeze({ state: "ready", ...evidence });
+}
 
 function deploymentOf(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -76,10 +101,15 @@ async function answerOf(target, { probe, timeoutMs }) {
     const answer = { status: response.status };
     const retryAfter = response.headers?.get?.("retry-after");
     if (retryAfter) answer.retryAfter = retryAfter;
-    // An unready machine still reports its running release and latest receipt with HTTP 503.
-    if (target.kind === "machine" && (response.status < 400 || response.status === 503)) {
-      try {
-        const body = await response.json();
+    if (target.kind === "machine") {
+      let body;
+      try { body = await response.json(); }
+      catch { answer.readiness = Object.freeze({ state: "unknown", reason: "unreadable-machine-health" }); }
+      answer.readiness ??= machineReadiness(body);
+      // Keep PR96's release-identity boundary: a 503 still reports its running
+      // release, while other failed HTTP answers do not establish that identity.
+      // Optional metadata must never erase already-read failed readiness.
+      if (response.status < 400 || response.status === 503) {
         for (const key of ["release", "artifact"]) {
           if (body?.[key] === null || typeof body?.[key] === "string") answer[key] = body[key];
         }
@@ -87,7 +117,7 @@ async function answerOf(target, { probe, timeoutMs }) {
         if (sources !== undefined) answer.sources = sources;
         const deployment = deploymentOf(body?.deployment);
         if (deployment !== undefined) answer.deployment = deployment;
-      } catch { /* a machine whose health is not JSON still answered */ }
+      }
     } else {
       await response.body?.cancel?.();
     }
@@ -107,21 +137,27 @@ export async function readPrimaryHealth({ targets = PRIMARY_HEALTH_TARGETS, prob
   return Object.freeze({ at, systems: Object.freeze(systems) });
 }
 
-/** Changes of charge or release evidence, ignoring pulse/receipt timestamps alone. */
+/** Changes of charge, readiness or release evidence, ignoring pulse/receipt timestamps alone. */
 export function primaryHealthChanges(previous, current) {
   const before = new Map((previous?.systems ?? []).map((system) => [system.id, system]));
   return current.systems.filter((system) => {
     const was = before.get(system.id);
-    return was === undefined || was.charge !== system.charge || !isDeepStrictEqual(releaseEvidenceOf(was), releaseEvidenceOf(system));
+    return was === undefined || was.charge !== system.charge || !isDeepStrictEqual(releaseEvidenceOf(was), releaseEvidenceOf(system))
+      || !isDeepStrictEqual(was.readiness, system.readiness);
   }).map((system) => Object.freeze({ ...system, was: before.get(system.id)?.charge ?? "unknown" }));
 }
 
 const escape = (text) => String(text).replace(/[&<>"]/gu, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]);
 const WORD = Object.freeze({ held: "answering", denied: "not answering", contested: "unavailable (says so)", unknown: "not read" });
 
+const stateWord = (system) => system.kind !== "machine" ? WORD[system.charge]
+  : system.charge === "held" ? "ready"
+  : system.readiness?.state === "failed" ? "not ready"
+  : system.charge === "unknown" ? "readiness unknown" : WORD[system.charge];
+
 /** The public status page of one reading. */
 export function renderPrimaryHealthPage(status) {
-  const rows = status.systems.map((system) => `<tr class="${system.charge}"><td><a href="${escape(system.url)}">${escape(system.id)}</a></td><td>${WORD[system.charge]}</td><td>${escape(system.status ?? system.error ?? "")}${system.deployment ? ` &middot; last deployment receipt ${escape(system.deployment.outcome ?? "unknown")}${system.deployment.stage ? ` at ${escape(system.deployment.stage)}` : ""}` : ""}</td><td>${escape(system.since ?? "")}</td></tr>`).join("\n");
+  const rows = status.systems.map((system) => `<tr class="${system.charge}"><td><a href="${escape(system.url)}">${escape(system.id)}</a></td><td>${stateWord(system)}</td><td>${escape(system.status ?? system.error ?? "")}${system.readiness?.reason ? ` &middot; ${escape(system.readiness.reason)}` : ""}${system.deployment ? ` &middot; last deployment receipt ${escape(system.deployment.outcome ?? "unknown")}${system.deployment.stage ? ` at ${escape(system.deployment.stage)}` : ""}` : ""}</td><td>${escape(system.since ?? "")}</td></tr>`).join("\n");
   const down = status.systems.filter((system) => system.charge !== "held").length;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -129,7 +165,7 @@ export function renderPrimaryHealthPage(status) {
 <style>:root{color-scheme:light dark}body{font:15px/1.5 system-ui,sans-serif;margin:0 auto;max-width:56rem;padding:1rem}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:.3rem .5rem;border-bottom:1px solid #8884}tr.denied td:nth-child(2){color:#c33}tr.contested td:nth-child(2){color:#b80}tr.held td:nth-child(2){color:#2a2}td{overflow-wrap:anywhere}</style>
 </head><body>
 <h1>561 Group status</h1>
-<p>Read by Cold Red Gate at ${escape(status.at)}; ${down === 0 ? "every system is answering" : `${down} of ${status.systems.length} systems are not answering normally`}. Machine-readable: <a href="status.json">status.json</a>. This page is rewritten every pulse.</p>
+<p>Read by Cold Red Gate at ${escape(status.at)}; ${down === 0 ? "all monitored checks are satisfied" : `${down} of ${status.systems.length} monitored checks need attention`}. Machine-readable: <a href="status.json">status.json</a>. This page is rewritten every pulse.</p>
 <table><thead><tr><th>System</th><th>State</th><th>Answer</th><th>Since</th></tr></thead><tbody>
 ${rows}
 </tbody></table>
@@ -148,7 +184,7 @@ async function readJson(path) {
 }
 
 /**
- * Read the primary systems, record every change of charge or release evidence, and write the public
+ * Read the primary systems, record every change of charge, readiness or release evidence, and write the public
  * status document and page. Returns the reading and the changes it recorded.
  */
 export async function runPrimaryHealthPulse({ statusDirectory, journal, targets, probe, clock, timeoutMs, retainedReleaseOutcomes } = {}) {
@@ -168,7 +204,8 @@ export async function runPrimaryHealthPulse({ statusDirectory, journal, targets,
         ...(change.status === undefined ? {} : { status: change.status }), ...(change.error === undefined ? {} : { error: change.error }),
         ...(change.release === undefined ? {} : { release: change.release }), ...(change.artifact === undefined ? {} : { artifact: change.artifact }),
         ...(change.sources === undefined ? {} : { sources: change.sources }),
-        ...(change.deployment === undefined ? {} : { deployment: change.deployment }) } });
+        ...(change.deployment === undefined ? {} : { deployment: change.deployment }),
+        ...(change.readiness === undefined ? {} : { readiness: change.readiness }) } });
     recorded.push(Object.freeze({ system: change.id, charge: change.charge, was: change.was, ...(record?.id === undefined ? {} : { evidence: record.id }) }));
   }
   // Optional private receiving shares this pulse and its existing journal. The

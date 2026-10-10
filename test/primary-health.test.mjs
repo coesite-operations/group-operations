@@ -40,7 +40,7 @@ test("a pulse records each change as a told semantic record and writes the publi
   let laptop = 502;
   const probe = async (url) => {
     if (url.startsWith("http://127.0.0.1")) return response(200, { body: { ok: true, release: "abc", deployment: { outcome: "staged", stage: "pre-switch-check" } } });
-    if (url.includes("bare-cedar-fog")) return response(laptop);
+    if (url.includes("bare-cedar-fog")) return response(laptop, { body: laptop === 200 ? { ok: true } : undefined });
     return response(503, { retryAfter: "3600" });
   };
   let now = 0;
@@ -53,7 +53,7 @@ test("a pulse records each change as a told semantic record and writes the publi
   assert.equal(written.systems[0].url, "https://cold-red-gate.561.group/healthz", "the public face is shown, not the loopback probe");
   const page = readFileSync(join(statusDirectory, "index.html"), "utf8");
   assert.match(page, /bare-cedar-fog<\/a><\/td><td>not answering/u);
-  assert.match(page, /2 of 3 systems are not answering normally/u);
+  assert.match(page, /2 of 3 monitored checks need attention/u);
 
   const second = await runPrimaryHealthPulse({ statusDirectory, journal, targets, probe, clock });
   assert.equal(second.changes.length, 0, "an unchanged pulse records nothing");

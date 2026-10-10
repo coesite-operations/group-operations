@@ -20,14 +20,14 @@ const read = (body, { at = "2026-10-10T01:00:00Z", status = 200, retryAfter, kin
   targets: [{ ...target, kind }], clock: () => at,
   probe: async (url) => {
     assert.equal(url, target.url);
-    return { status, headers: { get: () => retryAfter ?? null }, json: async () => structuredClone(body), body: { cancel: async () => {} } };
+    return { status, headers: { get: () => retryAfter ?? null }, json: async () => ({ ok: true, ...structuredClone(body) }), body: { cancel: async () => {} } };
   },
 });
 
 test("running release identity and the exact latest staged receipt stay separate", async () => {
   const body = fixture();
   const { systems: [system] } = await read(body);
-  assert.deepEqual(system, { id: target.id, kind: target.kind, url: target.public, charge: "held", status: 200, ...body });
+  assert.deepEqual(system, { id: target.id, kind: target.kind, url: target.public, charge: "held", status: 200, ...body, readiness: { state: "ready", ok: true } });
   assert.notEqual(system.release, system.deployment.revision);
   assert.notEqual(system.artifact, system.deployment.storePath);
   assert.equal(system.sources[0].commit, "running-source");
@@ -150,7 +150,7 @@ test("charge changes, new targets, and changed deployment outcomes retain their 
   assert.equal(changed.length, 1);
   assert.equal(changed[0].deployment.outcome, "failure");
   assert.equal(changed[0].release, "running-revision");
-  assert.equal(changed[0].charge, "held", "held means answering, not acceptance of the candidate");
+  assert.equal(changed[0].charge, "held", "held means explicit running readiness, not acceptance of the candidate");
   const unavailable = await read(body, { status: 503, retryAfter: "120" });
   assert.equal(primaryHealthChanges(previous, unavailable)[0].charge, "contested");
   assert.equal(chargeOf({ status: 502 }), "denied");
@@ -166,7 +166,7 @@ test("non-machine and failed HTTP answers do not claim running release evidence"
     targets: [target], clock: () => "now",
     probe: async () => ({ status: 200, headers: { get: () => null }, json: async () => { throw new SyntaxError("not JSON"); } }),
   });
-  assert.equal(brokenJson.systems[0].charge, "held");
+  assert.equal(brokenJson.systems[0].charge, "unknown");
   assert.equal(Object.hasOwn(brokenJson.systems[0], "release"), false);
 });
 
@@ -178,7 +178,7 @@ test("unready HTTP 503 machines preserve running identity and their separate lat
     const { systems: [system] } = await read(body, { status: 503, retryAfter });
     assert.deepEqual(system, {
       id: target.id, kind: target.kind, url: target.public, charge, status: 503,
-      ...(retryAfter === undefined ? {} : { retryAfter }), ...body,
+      ...(retryAfter === undefined ? {} : { retryAfter }), ...body, readiness: { state: "ready", ok: true },
     });
     assert.notEqual(system.release, system.deployment.revision);
     assert.notEqual(system.artifact, system.deployment.storePath);
@@ -224,12 +224,12 @@ test("the pulse journal payload carries running identity and changed attempt evi
   let at = "2026-10-10T01:00:00Z";
   const options = {
     statusDirectory: "memory-only", targets: [target], clock: () => at,
-    probe: async () => ({ status: 200, headers: { get: () => null }, json: async () => structuredClone(body) }),
+    probe: async () => ({ status: 200, headers: { get: () => null }, json: async () => ({ ok: true, ...structuredClone(body) }) }),
     journal: { record: (record) => { records.push(record); return { id: `record-${records.length}` }; } },
   };
   const first = await pulse(options);
   assert.deepEqual(records[0].record, {
-    system: target.id, kind: target.kind, url: target.public, charge: "held", was: "unknown", status: 200, ...body,
+    system: target.id, kind: target.kind, url: target.public, charge: "held", was: "unknown", status: 200, ...body, readiness: { state: "ready", ok: true },
   });
   assert.deepEqual(first.changes, [{ system: target.id, charge: "held", was: "unknown", evidence: "record-1" }]);
   body.deployment.at = "2026-10-10T02:00:00Z";
@@ -243,7 +243,7 @@ test("the pulse journal payload carries running identity and changed attempt evi
   const changed = await pulse(options);
   assert.equal(records.length, 2);
   assert.deepEqual(records[1].record, {
-    system: target.id, kind: target.kind, url: target.public, charge: "held", was: "held", status: 200, ...body,
+    system: target.id, kind: target.kind, url: target.public, charge: "held", was: "held", status: 200, ...body, readiness: { state: "ready", ok: true },
   });
   assert.equal(changed.status.systems[0].since, at);
   const status = JSON.parse(files.get(join("memory-only", "status.json")));
