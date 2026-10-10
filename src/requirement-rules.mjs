@@ -66,9 +66,12 @@ export function recordAssemblyBreak({ repositoryRoot, input, seat, at = new Date
 
 /* ---------------------------------------------------------------- design-rule baselines */
 
+/** A violation as the baseline keeps it: the content digest of its name, so a baseline of thousands stays one record. */
+export const violationDigest = (item) => `sha256:${createHash("sha256").update(String(item)).digest("hex").slice(0, 20)}`;
+
 /** Record a rule's violations at adoption as a signed baseline, charged contested (told for and against). */
 export function recordBaseline({ repositoryRoot, rule, violations, seat, at = new Date().toISOString(), keyDirectory }) {
-  const body = { kind: BASELINE, id: rule, rule, at, violations: [...new Set(violations)].sort() };
+  const body = { kind: BASELINE, id: rule, rule, at, violations: [...new Set(violations.map(violationDigest))].sort() };
   const key = seatKey(seat, { directory: keyDirectory });
   const root = recordRootOf({ repositoryRoot, kind: BASELINE, id: `${rule}-${at.slice(0, 10)}` });
   registerSeatKey({ root, key, at });
@@ -108,7 +111,8 @@ export function detect({ repositoryRoot, rule, scratch }) {
     : rule === "drc-5-order" ? unorderedMerges(repositoryRoot, { since: DRC5_ADOPTED })
       : (() => { throw new TypeError(`no detector for ${rule}`); })();
   const held = new Set(baseline?.violations ?? []);
-  const added = current.filter((item) => !held.has(item));
-  const removed = [...held].filter((item) => !current.includes(item));
+  const added = current.filter((item) => !held.has(violationDigest(item)));
+  const present = new Set(current.map(violationDigest));
+  const removed = [...held].filter((digest) => !present.has(digest));
   return Object.freeze({ rule, baselineAt: baseline?.at ?? null, violations: current.length, added, removed: removed.length, ok: baseline !== undefined && added.length === 0 });
 }
