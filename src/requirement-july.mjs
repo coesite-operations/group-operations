@@ -186,7 +186,14 @@ export function carryToJuly({ repositoryRoot, schemaDirectory = join(repositoryR
   // A record already in the July form keeps its content; a journal-only one is written in it. A held
   // file the July form refuses (a later capture's shape) is conformed, and the carry is refused
   // outright if conforming would lose any of its leaves.
+  // A record already carried (its address holds) is the team's now: it is never rewritten, so a
+  // corrected reading or a seat's attestation on it survives every later carry.
+  const heldAt = (path) => {
+    if (!existsSync(path)) return false;
+    try { return addressHolds(types, JSON.parse(readFileSync(path, "utf8"))); } catch { return false; }
+  };
   const carryRequirement = (path, read) => {
+    if (heldAt(path)) { carried.requirements.push(path.slice(root.length + 1)); return; }
     const original = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : undefined;
     let record = original ?? julyRequirementOf(read, { seat });
     if (!createTypedMark(types.requirement, withoutSignCell(record)).ok) record = conformRequirement(record, read, { seat });
@@ -213,15 +220,18 @@ export function carryToJuly({ repositoryRoot, schemaDirectory = join(repositoryR
   for (const read of readGoverning({ repositoryRoot: root, kind: RULING, scratch }).records) {
     attempt(`ruling:${read.body.id}`, () => {
       const { decision, ruling } = julyRulingOf(read);
-      write(join(pool("decision-records"), `${decision.id}.json`), addressed(types["decision-record"], decision));
-      write(join(pool("rulings"), `${ruling.id}.json`), addressed(types.ruling, ruling, read.address));
+      const decisionPath = join(pool("decision-records"), `${decision.id}.json`);
+      const rulingPath = join(pool("rulings"), `${ruling.id}.json`);
+      if (!heldAt(decisionPath)) write(decisionPath, addressed(types["decision-record"], decision));
+      if (!heldAt(rulingPath)) write(rulingPath, addressed(types.ruling, ruling, read.address));
       carried.decisions.push(decision.id); carried.rulings.push(ruling.id);
     });
   }
   for (const read of readGoverning({ repositoryRoot: root, kind: ASSEMBLY_BREAK, scratch }).records) {
     attempt(`assembly-break:${read.body.id}`, () => {
       const attestation = julyAttestationOf(read);
-      write(join(pool("quality-attestations"), `${attestation.id}.json`), addressed(types["quality-attestation"], attestation, read.address));
+      const attestationPath = join(pool("quality-attestations"), `${attestation.id}.json`);
+      if (!heldAt(attestationPath)) write(attestationPath, addressed(types["quality-attestation"], attestation, read.address));
       carried.attestations.push(attestation.id);
     });
   }

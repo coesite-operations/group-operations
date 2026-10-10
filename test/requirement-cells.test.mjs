@@ -4,12 +4,12 @@ import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { REQUIREMENT, RULING, existenceOnly, readGoverning, recordGoverning } from "../src/requirement-cells.mjs";
+import { REQUIREMENT, REQUIREMENT_SECTION, RULING, existenceOnly, readGoverning, recordGoverning } from "../src/requirement-cells.mjs";
 import { exercise, maintainRequirements, readingsOf } from "../src/requirement-maintenance.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
 import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
-import { addressHolds, carryToJuly, julyTypes, lostFrom, uncarried } from "../src/requirement-july.mjs";
+import { addressHolds, addressed, carryToJuly, julyTypes, lostFrom, uncarried } from "../src/requirement-july.mjs";
 import { readPools } from "../src/requirement-pools.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -215,6 +215,13 @@ test("the codemod carries requirements, rulings and breaks into the July forms a
     assert.equal(pools.requirements.length, 1);
     assert.equal(pools.rulings.length, 1);
     assert.equal(pools.rulings[0].body.ruling, "Everything is signed, cell-typed data.");
+    // A ruling's decision corrected by the team (re-addressed) survives a later carry.
+    const decisionPath = join(root, REQUIREMENT_SECTION, "content", "decision-records", "everything-is-cell-typed-decision.json");
+    const decision = JSON.parse(readFileSync(decisionPath, "utf8"));
+    const corrected = addressed(types["decision-record"], { ...decision, decision: "Everything is a SignCell sign." });
+    writeFileSync(decisionPath, JSON.stringify(corrected));
+    carryToJuly({ repositoryRoot: root, schemaDirectory: SCHEMAS, seat: SEAT, scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
+    assert.equal(JSON.parse(readFileSync(decisionPath, "utf8")).decision, "Everything is a SignCell sign.");
     // An edited record no longer holds its address and is refused.
     writeFileSync(join(root, SECTION, "content", "requirements", "the-board-holds-the-order.json"), JSON.stringify({ ...july, asks: "something else" }));
     assert.equal(readPools({ repositoryRoot: root, schemaDirectory: SCHEMAS }).refused.length, 1);
