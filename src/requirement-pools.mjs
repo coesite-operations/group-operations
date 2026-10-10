@@ -19,13 +19,18 @@ const MEDIA = "text/plain";
 const PURPOSE = "561-group.july-record-attestation.v1";
 const git = (root, ...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 });
 
-/** The July pool files under a repository, by kind. */
-export function julyPoolFiles(repositoryRoot) {
-  const listed = git(repositoryRoot, "ls-files", "-co", "--exclude-standard", "-z", "--",
-    ":(glob)lib/**/content/requirements/*.json",
+/**
+ * The July pool files under a repository, by kind. With `recurse`, requirements committed in the
+ * checked-out submodules (section repositories mounted into the corpus) are listed too: git lists
+ * submodules only from their index, so a submodule's uncommitted record is not read until it lands.
+ */
+export function julyPoolFiles(repositoryRoot, { recurse = false } = {}) {
+  const pathspecs = [":(glob)lib/**/content/requirements/*.json",
     `:(glob)${REQUIREMENT_SECTION}/content/rulings/*.json`,
     `:(glob)${REQUIREMENT_SECTION}/content/decision-records/*.json`,
-    `:(glob)${REQUIREMENT_SECTION}/content/quality-attestations/*.json`).split("\0").filter(Boolean)
+    `:(glob)${REQUIREMENT_SECTION}/content/quality-attestations/*.json`];
+  const list = (...args) => git(repositoryRoot, "ls-files", ...args, "-z", "--", ...pathspecs).split("\0").filter(Boolean);
+  const listed = [...new Set([...list("-co", "--exclude-standard"), ...(recurse ? list("--recurse-submodules") : [])])]
     .filter((path) => !/\/(legacy|_archive|node_modules)\//u.test(path));
   const kind = (path) => path.match(/\/content\/(requirements|rulings|decision-records|quality-attestations)\//u)?.[1];
   return Object.freeze(Object.groupBy(listed, kind));
@@ -88,7 +93,8 @@ function rulingOf(path, record, decisions) {
 export function readPools({ repositoryRoot, schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY) }) {
   const root = resolve(repositoryRoot);
   const types = julyTypes(schemaDirectory);
-  const files = julyPoolFiles(root);
+  // Requirements in mounted section repositories are read (and refused until addressed) like any other.
+  const files = julyPoolFiles(root, { recurse: true });
   const refused = [];
   const load = (path) => {
     try {

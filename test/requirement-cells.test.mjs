@@ -257,6 +257,32 @@ test("the codemod keeps every leaf of a held record, addresses a pool record no 
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
 });
 
+test("requirements committed in a mounted section repository are read, and refused until addressed", () => {
+  const { root, keys } = repository();
+  const mounted = mkdtempSync(join(tmpdir(), "section-repository-"));
+  try {
+    const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "user.email=t@t", "-c", "user.name=t", "-c", "protocol.file.allow=always", ...args], { stdio: "pipe" });
+    git(mounted, "init", "-q");
+    const record = { id: "a-mounted-section-is-measured", name: "A mounted section is measured", kind: "requirement", "raised-by": "emsenn",
+      asks: "measure the mounted section too", "met-when": [{ cell: "mounted:measured", target: "held", command: "true", "expected-exit": 0 }],
+      "x-provenance": { "recorded-by": SEAT, "recorded-on": "2026-10-10" } };
+    mkdirSync(join(mounted, "content", "requirements"), { recursive: true });
+    writeFileSync(join(mounted, "content", "requirements", `${record.id}.json`), JSON.stringify(record));
+    git(mounted, "add", "-A"); git(mounted, "commit", "-qm", "unaddressed");
+    git(root, "submodule", "add", "-q", mounted, `${SECTION}/services/mounted-section`);
+    const unaddressed = readPools({ repositoryRoot: root, schemaDirectory: SCHEMAS });
+    assert.equal(unaddressed.requirements.length, 0);
+    assert.deepEqual(unaddressed.refused.map((r) => r.path), [`${SECTION}/services/mounted-section/content/requirements/${record.id}.json`]);
+    const inside = join(root, SECTION, "services", "mounted-section");
+    writeJuly({ repositoryRoot: inside, schemaDirectory: SCHEMAS, kind: "requirement", record, path: `content/requirements/${record.id}.json`, seat: SEAT, keyDirectory: keys });
+    git(inside, "commit", "-qam", "addressed");
+    const read = readPools({ repositoryRoot: root, schemaDirectory: SCHEMAS });
+    assert.deepEqual(read.refused, []);
+    assert.deepEqual(read.requirements.map((r) => r.body.id), [record.id]);
+    assert.equal(read.requirements[0].body.section, `${SECTION}/services/mounted-section`);
+  } finally { for (const dir of [root, keys, mounted]) rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("a break class attested twice in the July pools files its re-architecture requirement, attested by the seat", () => {
   const { root, keys } = repository();
   try {
