@@ -27,8 +27,11 @@ import { createTypedMark } from "@red-cup-engineering/signcell/typed-mark";
 import { ASSEMBLY_BREAK, REQUIREMENT, REQUIREMENT_SECTION, RULING, readGoverning } from "./requirement-cells.mjs";
 import { julyPoolFiles } from "./requirement-pools.mjs";
 
-/** Where the team keeps the July schemas (moved forward from the 2026-08-03 executive office). */
-export const JULY_SCHEMA_DIRECTORY = `${REQUIREMENT_SECTION}/lib/schemas`;
+/**
+ * Where the team keeps the July schemas: emsenn/schema/requirement beside the ruling, decision-record
+ * and quality-attestation schemas materialized byte for byte from the 2026-08-03 executive office.
+ */
+export const JULY_SCHEMA_DIRECTORY = `${REQUIREMENT_SECTION}/data/records/schema`;
 /** The team's office: the July requirements management team. */
 export const TEAM_OFFICE = "requirements-management-team";
 const KINDS = Object.freeze(["requirement", "ruling", "decision-record", "quality-attestation"]);
