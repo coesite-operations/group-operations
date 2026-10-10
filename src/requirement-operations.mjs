@@ -7,14 +7,14 @@
 import { join } from "node:path";
 import { operation } from "@red-cup-engineering/computer-system-engine/rpc/operation";
 import { repositoryRootOf } from "@red-cup-engineering/metroplat/offices";
-import { REQUIREMENT, RULING, readGoverning } from "./requirement-cells.mjs";
+import { readPools } from "./requirement-pools.mjs";
 import { maintainRequirements, readingsOf } from "./requirement-maintenance.mjs";
 
 /** How often the node measures again: the enterprise loop derives every turn, the checks run at most this often. */
 export const MEASURE_EVERY_SECONDS = 900;
 
-/** The office whose seat signs the team's readings. */
-export const MAINTAINING_OFFICE = "emsenn/services/561-group/services/operations-services-section/services/requirement-management-operation-services-section#requirement-maintainer";
+/** The office whose seat attests the team's readings: the July requirements management team. */
+export const MAINTAINING_OFFICE = "emsenn/services/561-group/services/operations-services-section/services/requirement-management-operation-services-section#requirements-management-team";
 
 export function requirementOperations(binding = {}) {
   const now = () => (binding?.now === undefined ? new Date().toISOString() : binding.now());
@@ -27,7 +27,7 @@ export function requirementOperations(binding = {}) {
     operation({
       verb: "requirement-maintenance-findings", inputFormat: "json", outputFormat: "json",
       summary: "Run every signed requirement's met-when checks and every ruling's checks; record each reading as a signed cell; derive a request for each requirement not held and a report for each broken ruling.",
-      description: "Domain: { poster, only?: [requirement id] }. A derivation by poster: requests tagged requirement-maintenance, requirement-<id> and charge-<held|denied|contested|unknown>, carrying the raiser as user; reports tagged ruling-violation. Readings are signed by the requirement-maintainer seat into the node's requirement-maintenance journal.",
+      description: "Domain: { poster, only?: [requirement id] }. A derivation by poster: requests tagged requirement-maintenance, requirement-<id> and charge-<held|denied|contested|unknown>, carrying the raiser as user; reports tagged ruling-violation. Readings are attested by the requirements-management-team seat into the node's requirement-maintenance journal.",
       reads: ["repository", "requirement", "ruling"],
       writes: ["requirement-reading"],
       effects: { ...effects, class: "external", replay: "coordinated" },
@@ -45,10 +45,13 @@ export function requirementOperations(binding = {}) {
     }),
     operation({
       verb: "requirements", inputFormat: "json", outputFormat: "json",
-      summary: "The signed requirements and rulings recorded in the node's repository, each with its charge and its signature's standing.",
-      description: "Domain: { kind?: requirement | ruling }. Returns { records: [{ body, address, charge, signature, recordedAt, source }], refused }.",
+      summary: "The requirements and rulings in the July pools of the node's repository and its mounted sections, each with its charge and its attestation's standing.",
+      description: "Domain: { kind?: requirement | ruling }. Returns { records: [{ body, address, charge, signature, recordedAt, source }], refused }, read as the maintenance loop reads them.",
       reads: ["repository"], effects,
-      run: (input) => readGoverning({ repositoryRoot: repositoryRoot(input), kind: input?.kind === "ruling" ? RULING : REQUIREMENT, scratch: join(binding.dataRoot, "requirement-maintenance", "scratch") }),
+      run: (input) => {
+        const pools = readPools({ repositoryRoot: repositoryRoot(input), ...(binding.schemaDirectory ? { schemaDirectory: binding.schemaDirectory } : {}) });
+        return { records: input?.kind === "ruling" ? pools.rulings : pools.requirements, refused: pools.refused };
+      },
     }),
     operation({
       verb: "requirement-readings", inputFormat: "json", outputFormat: "json",

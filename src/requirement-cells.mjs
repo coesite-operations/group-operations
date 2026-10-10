@@ -1,20 +1,23 @@
 /**
- * Requirements and rulings as signed cells (the founder's standing ruling: everything is signed,
- * cell-typed data).
+ * Requirements and rulings as signed, cell-typed data (the founder's standing ruling).
  *
- * A requirement is the signcell cell (party:<raiser>, requires, requirement:<id>); a ruling is
- * (party:<raiser>, rules, ruling:<id>); a requirement reading is (requirement:<id>, met,
- * requirement:<id>). Each cell carries its evidence, so its charge is FOUR-valued: a requirement
- * whose raiser's own sentence is held is told for; one relayed without that sentence is also told
- * against, and reads contested until the raiser corroborates or withdraws it (Huidu Guanli: the
- * grey stays visible instead of being forced to pass or fail).
+ * "Signed" is SignCell's sense: a record is a semiotic sign, not a cryptographic signature. Each
+ * record is a SignCell typed mark (its body, admitted by its kind's data type and addressed by its
+ * content) together with a SignCell predication cell that carries its evidence, so its charge is
+ * FOUR-valued: a requirement is (party:<raiser>, requires, requirement:<id>), a ruling is
+ * (party:<raiser>, rules, ruling:<id>), a requirement reading is (requirement:<id>, met,
+ * requirement:<id>). A requirement whose raiser's own sentence is held is told for; one relayed
+ * without that sentence is also told against, and reads contested until the raiser corroborates or
+ * withdraws it (Huidu Guanli: the grey stays visible instead of being forced to pass or fail).
+ * SignChain and SignGraph compose these signs; nothing here restates them.
  *
- * The cell and the body it names (the raiser's verbatim words, their sources, the met-when checks)
- * are signed by the recording seat with Ed25519 (computer-content signed content claims) and
- * admitted into a semiotic-eavt witness journal with record-semantic-record, whose told pair is the
- * cell's. A requirement or ruling is recorded in the section that owns its outcome, under its own
- * journal root (<section>/data/requirements/<id>, <section>/data/rulings/<id>), so two seats
- * recording on the same day never append to one file.
+ * Separately, the recording seat attests the record with an Ed25519 signed content claim over the
+ * mark and cell. That is identity attestation (which seat recorded it, and that the bytes are the
+ * ones it recorded); it is not what makes the record a signed cell.
+ *
+ * Records are admitted into a semiotic-eavt witness journal with record-semantic-record, whose told
+ * pair is the cell's, one journal root per record so two seats recording at once never append to
+ * one file.
  */
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync } from "node:crypto";
