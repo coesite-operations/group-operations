@@ -8,6 +8,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { receiveRetainedReleaseOutcomes, separateReleaseOutcomeCustody } from "./retained-release-outcomes.mjs";
 
 /** The primary systems a pulse reads by default: the machines, then every public property. */
 export const PRIMARY_HEALTH_TARGETS = Object.freeze([
@@ -150,8 +151,9 @@ async function readJson(path) {
  * Read the primary systems, record every change of charge or release evidence, and write the public
  * status document and page. Returns the reading and the changes it recorded.
  */
-export async function runPrimaryHealthPulse({ statusDirectory, journal, targets, probe, clock, timeoutMs } = {}) {
+export async function runPrimaryHealthPulse({ statusDirectory, journal, targets, probe, clock, timeoutMs, retainedReleaseOutcomes } = {}) {
   if (typeof statusDirectory !== "string" || statusDirectory === "") throw new TypeError("primary health needs a status directory");
+  if (retainedReleaseOutcomes !== undefined) separateReleaseOutcomeCustody({ statusDirectory, journal, binding: retainedReleaseOutcomes.binding });
   await mkdir(statusDirectory, { recursive: true });
   const previous = await readJson(join(statusDirectory, "status.json"));
   const reading = await readPrimaryHealth({ targets, probe, clock, timeoutMs });
@@ -169,7 +171,11 @@ export async function runPrimaryHealthPulse({ statusDirectory, journal, targets,
         ...(change.deployment === undefined ? {} : { deployment: change.deployment }) } });
     recorded.push(Object.freeze({ system: change.id, charge: change.charge, was: change.was, ...(record?.id === undefined ? {} : { evidence: record.id }) }));
   }
+  // Optional private receiving shares this pulse and its existing journal. The
+  // CLI supplies no binding or reader. Never merge private outcomes into status.
+  const releaseOutcomes = retainedReleaseOutcomes === undefined ? undefined
+    : await receiveRetainedReleaseOutcomes({ ...retainedReleaseOutcomes, journal, at: reading.at });
   await writeAtomically(join(statusDirectory, "status.json"), `${JSON.stringify(status, null, 2)}\n`);
   await writeAtomically(join(statusDirectory, "index.html"), renderPrimaryHealthPage(status));
-  return Object.freeze({ status, changes: Object.freeze(recorded) });
+  return Object.freeze({ status, changes: Object.freeze(recorded), ...(releaseOutcomes === undefined ? {} : { releaseOutcomes }) });
 }
