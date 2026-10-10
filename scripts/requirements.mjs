@@ -7,6 +7,7 @@
  *   group-requirements record-ruling      --seat SEAT [--repository ROOT] < ruling.json
  *   group-requirements read [--kind requirement|ruling] [--repository ROOT]
  *   group-requirements carry-to-july --seat SEAT [--repository ROOT] [--schemas DIR]   (the codemod into the July pools)
+ *   group-requirements carried [--repository ROOT] [--schemas DIR]   (exit 1 while any journal record has no addressed July record)
  *   group-requirements convert --seat SEAT [--repository ROOT]
  *   group-requirements maintain --seat SEAT --journal DIR [--repository ROOT] [--only id,id]
  *   group-requirements check-pull-request [--repository ROOT] < pull-request-body.md
@@ -28,7 +29,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { REQUIREMENT, RULING, readGoverning, recordGoverning, requirementOf, rulingOf } from "../src/requirement-cells.mjs";
-import { carryToJuly, julyRequirementOf, julyRulingOf } from "../src/requirement-july.mjs";
+import { carryToJuly, julyRequirementOf, julyRulingOf, uncarried } from "../src/requirement-july.mjs";
 import { readPools, writeJuly } from "../src/requirement-pools.mjs";
 import { REQUIREMENT_SECTION } from "../src/requirement-cells.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
@@ -76,7 +77,6 @@ try {
         writeJuly({ repositoryRoot: repositoryRoot(), kind: "ruling", record: ruling, path: `${REQUIREMENT_SECTION}/content/rulings/${ruling.id}.json`, seat: seat(), at })]);
       break;
     }
-      break;
     case "read": {
       const pools = readPools({ repositoryRoot: repositoryRoot() });
       const records = options.kind === "ruling" ? pools.rulings : pools.requirements;
@@ -91,6 +91,15 @@ try {
       try { const carried = carryToJuly({ repositoryRoot: repositoryRoot(), seat: seat(), scratch, ...(options.schemas ? { schemaDirectory: resolve(options.schemas) } : {}) });
         print({ requirements: carried.requirements.length, rulings: carried.rulings.length, decisions: carried.decisions.length, attestations: carried.attestations.length, refused: carried.refused });
         if (carried.refused.length > 0) process.exitCode = 1;
+      } finally { rmSync(scratch, { recursive: true, force: true }); }
+      break;
+    }
+    case "carried": {
+      // The proof before any journal is retired: every journal record has its addressed July record.
+      const scratch = mkdtempSync(join(tmpdir(), "group-requirements-"));
+      try { const missing = uncarried({ repositoryRoot: repositoryRoot(), scratch, ...(options.schemas ? { schemaDirectory: resolve(options.schemas) } : {}) });
+        print({ uncarried: missing });
+        if (missing.length > 0) process.exitCode = 1;
       } finally { rmSync(scratch, { recursive: true, force: true }); }
       break;
     }
@@ -148,7 +157,7 @@ try {
       break;
     }
     default:
-      throw new TypeError("commands: record-requirement, record-ruling, record-break, read, maintain, check-pull-request, brief, baseline, drc, carry-to-july, convert, record-requirement-journal");
+      throw new TypeError("commands: record-requirement, record-ruling, record-break, read, maintain, check-pull-request, brief, baseline, drc, carry-to-july, carried, convert, record-requirement-journal");
   }
 } catch (error) {
   process.stderr.write(`group-requirements: ${error.message}\n`);

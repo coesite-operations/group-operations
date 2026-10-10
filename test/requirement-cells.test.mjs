@@ -9,7 +9,7 @@ import { exercise, maintainRequirements, readingsOf } from "../src/requirement-m
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
 import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
-import { addressHolds, carryToJuly, julyTypes, lostFrom } from "../src/requirement-july.mjs";
+import { addressHolds, carryToJuly, julyTypes, lostFrom, uncarried } from "../src/requirement-july.mjs";
 import { readPools } from "../src/requirement-pools.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -194,11 +194,14 @@ test("the codemod carries requirements, rulings and breaks into the July forms a
       sources: [{ words: "everything should be signed cell typed data", session: "s", at: "2026-10-10" }] }, repositoryRoot: root, seat: SEAT, keyDirectory: keys });
     const scratch = mkdtempSync(join(tmpdir(), "scratch-"));
     recordAssemblyBreak({ repositoryRoot: root, seat: SEAT, keyDirectory: keys, scratch, input: { breakClass: "undeclared-import", evidence: ["a"] } });
+    // Before the carry every journal record is named uncarried; after it, none is.
+    assert.equal(uncarried({ repositoryRoot: root, schemaDirectory: SCHEMAS, scratch: mkdtempSync(join(tmpdir(), "scratch-")) }).length, 3);
     const carried = carryToJuly({ repositoryRoot: root, schemaDirectory: SCHEMAS, seat: SEAT, scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
     assert.deepEqual(carried.refused, []);
     assert.equal(carried.requirements.length, 1);
     assert.deepEqual(carried.rulings, ["everything-is-cell-typed"]);
     assert.equal(carried.attestations.length, 1);
+    assert.deepEqual(uncarried({ repositoryRoot: root, schemaDirectory: SCHEMAS, scratch: mkdtempSync(join(tmpdir(), "scratch-")) }), []);
     const types = julyTypes(SCHEMAS);
     const july = JSON.parse(readFileSync(join(root, SECTION, "content", "requirements", "the-board-holds-the-order.json"), "utf8"));
     assert.equal(july.kind, "requirement");

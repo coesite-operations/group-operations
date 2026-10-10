@@ -228,6 +228,27 @@ export function carryToJuly({ repositoryRoot, schemaDirectory = join(repositoryR
   return Object.freeze({ ...carried, refused });
 }
 
+/**
+ * Every journal requirement, ruling and assembly break that no July record carries: none in the
+ * pools whose address holds and whose sign-cell names the journal cell it was carried from. Empty
+ * is the proof the journals may be retired; until then nothing is removed.
+ */
+export function uncarried({ repositoryRoot, schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY), scratch }) {
+  const root = resolve(repositoryRoot);
+  const types = julyTypes(schemaDirectory);
+  const carriedCells = new Set(Object.values(julyPoolFiles(root)).flat().flatMap((path) => {
+    try {
+      const record = JSON.parse(readFileSync(join(root, path), "utf8"));
+      return addressHolds(types, record) && record["x-provenance"][SIGN_CELL].cell ? [record["x-provenance"][SIGN_CELL].cell] : [];
+    } catch { return []; }
+  }));
+  return Object.freeze([REQUIREMENT, RULING, ASSEMBLY_BREAK].flatMap((kind) => {
+    const read = readGoverning({ repositoryRoot: root, kind, scratch });
+    return [...read.records.filter((record) => !carriedCells.has(record.address)).map((record) => ({ kind, id: record.body.id, source: record.source })),
+      ...read.refused.map((refusal) => ({ kind, refused: refusal }))];
+  }));
+}
+
 /** Every July record in the team's pools and the requirement pools, with whether its address holds. */
 export function readJuly({ repositoryRoot, schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY), files }) {
   const types = julyTypes(schemaDirectory);
