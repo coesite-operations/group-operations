@@ -10,6 +10,9 @@ import { repositoryRootOf } from "@red-cup-engineering/metroplat/offices";
 import { REQUIREMENT, RULING, readGoverning } from "./requirement-cells.mjs";
 import { maintainRequirements, readingsOf } from "./requirement-maintenance.mjs";
 
+/** How often the node measures again: the enterprise loop derives every turn, the checks run at most this often. */
+export const MEASURE_EVERY_SECONDS = 900;
+
 /** The office whose seat signs the team's readings. */
 export const MAINTAINING_OFFICE = "emsenn/services/561-group/services/561-group-services-section#requirement-maintainer";
 
@@ -18,6 +21,7 @@ export function requirementOperations(binding = {}) {
   const repositoryRoot = (input) => input?.repositoryRoot ?? repositoryRootOf(binding);
   const journalRoot = () => join(binding.dataRoot, "requirement-maintenance");
   const keyDirectory = () => process.env.GROUP_SEAT_KEY_DIR ?? join(binding.stateDir ?? binding.dataRoot, "seat-keys");
+  let last;
   const effects = { class: "host-read", replay: "safe", coordination: "coordination-free", deterministic: "unmeasured", totality: "partial" };
   return Object.freeze([
     operation({
@@ -29,8 +33,14 @@ export function requirementOperations(binding = {}) {
       effects: { ...effects, class: "external", replay: "coordinated" },
       run: (input) => {
         if (typeof input?.poster !== "string" || input.poster === "") throw new TypeError("requirement-maintenance-findings: poster names the enterprise its findings are by");
-        return maintainRequirements({ repositoryRoot: repositoryRoot(input), journalRoot: journalRoot(), seat: `${MAINTAINING_OFFICE}@${input.poster}`,
-          poster: input.poster, at: now(), keyDirectory: keyDirectory(), only: input.only });
+        const at = now();
+        const key = JSON.stringify([input.poster, repositoryRoot(input), input.only ?? null]);
+        // Between measurements the last reading's openings stand: the board keeps them, nothing is re-run.
+        if (last?.key === key && Date.parse(at) - Date.parse(last.at) < MEASURE_EVERY_SECONDS * 1000) return last.result;
+        const result = maintainRequirements({ repositoryRoot: repositoryRoot(input), journalRoot: journalRoot(), seat: `${MAINTAINING_OFFICE}@${input.poster}`,
+          poster: input.poster, at, keyDirectory: keyDirectory(), only: input.only });
+        last = { key, at, result };
+        return result;
       },
     }),
     operation({

@@ -30,9 +30,7 @@
     "@red-cup-engineering/feltos": "workspace:*",
     "@red-cup-engineering/treasury-observation-service": "0.5.1",
     "@red-cup-engineering/exact-number-data-service": "workspace:*",
-    "@red-cup-engineering/x402-services-section": "workspace:*",
-    "@red-cup-engineering/signcell": "workspace:*",
-    "@red-cup-engineering/computer-content-engineering-services-section": "workspace:*"
+    "@red-cup-engineering/x402-services-section": "workspace:*"
   },
   "exports": {
     ".": "./src/group-operations.mjs",
