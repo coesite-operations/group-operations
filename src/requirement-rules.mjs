@@ -15,10 +15,14 @@
  *   DRC-5 order: every merged change names the requirement it serves.
  */
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { JULY_SCHEMA_DIRECTORY, addressHolds, julyAttestationOf, julyRequirementOf, julyTypes } from "./requirement-july.mjs";
+import { readPools, writeJuly } from "./requirement-pools.mjs";
 import { createHash } from "node:crypto";
 import { cell } from "@red-cup-engineering/signcell/cell";
 import { chargeOfTold } from "@red-cup-engineering/semiotic-eavt-services-section/record-semantic-record";
-import { ASSEMBLY_BREAK, BASELINE, REQUIREMENT, admitSigned, readGoverning, recordGoverning, recordRootOf, registerSeatKey, seatKey, signed } from "./requirement-cells.mjs";
+import { ASSEMBLY_BREAK, BASELINE, REQUIREMENT, REQUIREMENT_SECTION, admitSigned, readGoverning, recordGoverning, recordRootOf, registerSeatKey, seatKey, signed } from "./requirement-cells.mjs";
 import { ordersNamed } from "./requirement-orders.mjs";
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/u;
@@ -86,10 +90,15 @@ export function baselineOf({ repositoryRoot, rule, scratch }) {
     .sort((left, right) => String(left.body.at).localeCompare(String(right.body.at))).at(-1)?.body;
 }
 
-/** DRC-4: plain-JSON record files (requirement records and data/records). */
-export function plainRecordFiles(repositoryRoot) {
+/** DRC-4: record files that are plain JSON, not a SignCell typed mark of their July schema (requirement records and data/records). */
+export function plainRecordFiles(repositoryRoot, { schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY) } = {}) {
+  const types = existsSync(schemaDirectory) ? julyTypes(schemaDirectory) : undefined;
+  const addressedRecord = (path) => {
+    if (types === undefined) return false;
+    try { return addressHolds(types, JSON.parse(readFileSync(join(repositoryRoot, path), "utf8"))); } catch { return false; }
+  };
   return git(repositoryRoot, "ls-files", "-z", "--", ":(glob)lib/**/content/requirements/*.json", ":(glob)lib/**/data/records/**/*.json")
-    .split("\0").filter(Boolean).filter((path) => !/\/(legacy|_archive|node_modules)\//u.test(path) && !/\/schema\//u.test(path));
+    .split("\0").filter(Boolean).filter((path) => !/\/(legacy|_archive|node_modules)\//u.test(path) && !/\/schema\//u.test(path) && !addressedRecord(path));
 }
 
 /** When DRC-5 was adopted: merges from then on are read; the baseline holds those that named no order before it was enforced. */
@@ -115,4 +124,35 @@ export function detect({ repositoryRoot, rule, scratch }) {
   const present = new Set(current.map(violationDigest));
   const removed = [...held].filter((digest) => !present.has(digest));
   return Object.freeze({ rule, baselineAt: baseline?.at ?? null, violations: current.length, added, removed: removed.length, ok: baseline !== undefined && added.length === 0 });
+}
+
+/**
+ * Record an assembly break as the team's quality attestation (emsenn/schema/quality-attestation);
+ * when its class now has two or more attestations and no re-architecture requirement is held, write
+ * that requirement in the July form.
+ */
+export function recordAssemblyBreakJuly({ repositoryRoot, input, seat, at = new Date().toISOString(), keyDirectory, schemaDirectory }) {
+  if (typeof input?.breakClass !== "string" || !SLUG.test(input.breakClass)) throw new TypeError("breakClass is a lowercase slug");
+  if (!Array.isArray(input.evidence) || input.evidence.length === 0) throw new TypeError("evidence names the run, commit or error the break was met in");
+  const body = { breakClass: input.breakClass, at: input.at ?? at, evidence: input.evidence.map(String), ...(input.repair ? { repair: String(input.repair) } : {}), ...(input.metBy ? { metBy: String(input.metBy) } : {}) };
+  body.id = input.id ?? `${body.at.slice(0, 10)}-${createHash("sha256").update(JSON.stringify(body.evidence)).digest("hex").slice(0, 12)}`;
+  const options = { repositoryRoot, seat, keyDirectory, at, ...(schemaDirectory ? { schemaDirectory } : {}) };
+  const attestation = julyAttestationOf({ body, recordedAt: at, signature: { seat } });
+  writeJuly({ ...options, kind: "quality-attestation", record: attestation, path: `${REQUIREMENT_SECTION}/content/quality-attestations/${attestation.id}.json` });
+  const pools = readPools({ repositoryRoot, ...(schemaDirectory ? { schemaDirectory } : {}) });
+  const occurrences = pools.attestations.filter(({ record }) => record["x-provenance"]?.["break-class"] === body.breakClass).length;
+  const requirementId = reArchitectureIdOf(body.breakClass);
+  const held = pools.requirements.some((read) => read.body.id === requirementId);
+  let requirement;
+  if (occurrences >= 2 && !held) {
+    const section = input.section ?? "lib/emsenn/services/561-group/services/engineering-services-section";
+    const record = julyRequirementOf({ recordedAt: at, signature: { seat }, body: {
+      id: requirementId, name: `Assembly cannot break by ${body.breakClass}`, section, raisedBy: "emsenn", class: "requirement", authority: "party:emsenn", breakClass: body.breakClass, tier: "strategic",
+      asks: "if you encounter the same type of break twice, it becomes a requirement to re-architect it, cause like we should be doing ... much better packaging and deployment, much more aligned with our theory.",
+      sources: [{ words: "if you encounter the same type of break twice, it becomes a requirement to re-architect it", at: "2026-10-10", kind: "leader-ruling", relayed: true }],
+      metWhen: input.detector ? [{ cell: `${body.breakClass}:impossible-by-construction`, command: input.detector, expectedExit: 0 }] : [],
+    } }, { seat });
+    requirement = writeJuly({ ...options, kind: "requirement", record, path: `${section}/content/requirements/${requirementId}.json` });
+  }
+  return Object.freeze({ id: attestation.id, breakClass: body.breakClass, occurrences, requirement: requirement ?? (held ? { id: requirementId, filed: "already" } : undefined) });
 }

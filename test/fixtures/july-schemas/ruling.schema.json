@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "emsenn/schema/ruling",
+  "$comment": "Evidence that an external party actually ruled on a decision record, carried as a separate address-bound instance so the decision record does not authenticate its own decided claim. Structural conformance is not authority: the reader separately binds the ruling and decision identities to their seats, admits office and ruling evidence through mesh jurisdiction, verifies exact backs and decider relations, and checks the calendar day.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "backs",
+    "decider",
+    "carried-by",
+    "quote",
+    "channel",
+    "ruled-on",
+    "x-provenance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "$comment": "Equal to this instance JSON basename; enforced by the reader."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "backs": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "$comment": "Exact decision-record identity this evidence backs; resolution and identity binding are reader predicates."
+    },
+    "decider": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "$comment": "Exact external decider text repeated from the backed decision record."
+    },
+    "carried-by": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "$comment": "Exact local office id that carried this evidence; office conformance and jurisdiction are reader predicates."
+    },
+    "quote": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "$comment": "The observed words of the external decider. Validator output never discloses this value."
+    },
+    "channel": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "$comment": "Where the quoted ruling was observed."
+    },
+    "ruled-on": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
+      "$comment": "The Gregorian calendar day on which the ruling was observed, at day precision. The reader separately refuses year zero and impossible month, day, and leap combinations; this value states no finer temporal ordering."
+    },
+    "x-provenance": {
+      "type": "object",
+      "required": [
+        "recorded-by",
+        "recorded-on"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "recorded-by": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "recorded-on": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      }
+    }
+  },
+  "title": "ruling",
+  "x-provenance": {
+    "recorded-by": "codex/module-developer",
+    "recorded-on": "2026-07-17"
+  }
+}
