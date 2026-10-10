@@ -22,7 +22,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { defineSchemaType } from "@red-cup-engineering/computer-data-services-section/type-system/schema-type";
+import { defineSchemaType } from "@red-cup-engineering/computer-data-engineering-services-section/type-system/schema-type";
 import { createTypedMark } from "@red-cup-engineering/signcell/typed-mark";
 import { ASSEMBLY_BREAK, REQUIREMENT, REQUIREMENT_SECTION, RULING, readGoverning } from "./requirement-cells.mjs";
 import { julyPoolFiles } from "./requirement-pools.mjs";
