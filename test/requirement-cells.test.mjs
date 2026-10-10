@@ -10,7 +10,7 @@ import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
 import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
 import { addressHolds, addressed, carryToJuly, julyTypes, lostFrom, uncarried } from "../src/requirement-july.mjs";
-import { readPools } from "../src/requirement-pools.mjs";
+import { readPools, writeJuly } from "../src/requirement-pools.mjs";
 import { fileURLToPath } from "node:url";
 
 const SCHEMAS = fileURLToPath(new URL("./fixtures/july-schemas/", import.meta.url));
@@ -202,6 +202,13 @@ test("the codemod carries requirements, rulings and breaks into the July forms a
     assert.deepEqual(carried.rulings, ["everything-is-cell-typed"]);
     assert.equal(carried.attestations.length, 1);
     assert.deepEqual(uncarried({ repositoryRoot: root, schemaDirectory: SCHEMAS, scratch: mkdtempSync(join(tmpdir(), "scratch-")) }), []);
+    // Rewriting a carried requirement (a condition added) keeps it carried.
+    const heldPath = `${SECTION}/content/requirements/the-board-holds-the-order.json`;
+    const held = JSON.parse(readFileSync(join(root, heldPath), "utf8"));
+    writeJuly({ repositoryRoot: root, schemaDirectory: SCHEMAS, kind: "requirement", path: heldPath, seat: SEAT, keyDirectory: keys,
+      record: { ...held, "met-when": [...held["met-when"], { cell: "added:condition", target: "held", command: "true", "expected-exit": 0 }] } });
+    assert.deepEqual(uncarried({ repositoryRoot: root, schemaDirectory: SCHEMAS, scratch: mkdtempSync(join(tmpdir(), "scratch-")) }), []);
+    writeFileSync(join(root, heldPath), JSON.stringify(held, null, 2));
     const types = julyTypes(SCHEMAS);
     const july = JSON.parse(readFileSync(join(root, SECTION, "content", "requirements", "the-board-holds-the-order.json"), "utf8"));
     assert.equal(july.kind, "requirement");

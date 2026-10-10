@@ -113,10 +113,12 @@ export function writeJuly({ repositoryRoot, schemaDirectory = join(repositoryRoo
   const types = julyTypes(schemaDirectory);
   const key = seatKey(seat, { directory: keyDirectory });
   const withProvenance = { ...record, "x-provenance": { "recorded-by": seat, "recorded-on": at.slice(0, 10), ...(record["x-provenance"] ?? {}) } };
-  const signed = attest(addressed(types[kind], withProvenance), key, at);
   const target = join(resolve(repositoryRoot), path);
   if (!target.startsWith(resolve(repositoryRoot))) throw new TypeError("path must lie inside the repository");
   const existed = existsSync(target);
+  // A record rewritten in place keeps the journal cell it was carried from, so the carry stays proven.
+  const priorCell = existed ? JSON.parse(readFileSync(target, "utf8"))?.["x-provenance"]?.["sign-cell"]?.cell : undefined;
+  const signed = attest(addressed(types[kind], withProvenance, record["x-provenance"]?.["sign-cell"]?.cell ?? priorCell), key, at);
   mkdirSync(dirname(target), { recursive: true });
   // Written whole, so a reader never sees a half record.
   writeFileSync(`${target}.partial`, `${JSON.stringify(signed, null, 2)}\n`);
