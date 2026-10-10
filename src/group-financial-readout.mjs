@@ -98,7 +98,7 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
         outcomeCount: isSellerBooking ? 0 : null,
         // Historical payment-derived acceptance remains a claim, never current demand.
         border: null, legacyPaymentClaims: x402Record?.type === "X402SellerOutcomeObservation" ? { border: x402Record.border ?? null, toldCount: x402Record.toldCount ?? null, outcomeCount: x402Record.outcomeCount ?? null } : null,
-        paymentBooks: x402Record?.books ?? null, customerAcceptance: "unobserved",
+        paymentBooks: x402Record?.books ?? null, keptInLog: isSellerBooking ? x402Record.kept ?? null : null, customerAcceptance: "unobserved",
         revenueRecognized: x402Record?.type === "X402SellerPaymentObservation" ? false : null,
         transactionCount: Number.isInteger(x402Record?.transactionCount) ? x402Record.transactionCount : null }),
       Object.freeze({ kind: "hive-curation", state: hiveState, source: hiveCuration?.unitPath ?? null, earned: Object.freeze(curationEarned) }),
