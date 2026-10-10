@@ -54,7 +54,8 @@
     "./requirement-conversion": "./src/requirement-conversion.mjs",
     "./requirement-operations": "./src/requirement-operations.mjs",
     "./requirement-orders": "./src/requirement-orders.mjs",
-    "./scripts/requirements": "./scripts/requirements.mjs"
+    "./scripts/requirements": "./scripts/requirements.mjs",
+    "./primary-health": "./src/primary-health.mjs"
   },
   "name": "@561-group/group-operations",
   "private": true,
