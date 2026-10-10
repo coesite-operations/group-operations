@@ -10,7 +10,7 @@ const moneyText = (value) => Object.entries(object(value) ?? {}).map(([currency,
 
 function ageState(observedAt, asOf, maximumAgeMs) {
   const observed = Date.parse(observedAt ?? ""), now = Date.parse(asOf);
-  if (!Number.isFinite(observed) || !Number.isFinite(now)) return "unknown";
+  if (!Number.isFinite(observed) || !Number.isFinite(now) || observed > now) return "unknown";
   return now - observed > maximumAgeMs ? "stale" : "current";
 }
 
@@ -30,9 +30,14 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
   const x402Record = object(x402Settlement?.value);
   const x402ObservedAt = iso(x402Record?.observedAt);
   const isSellerBooking = ["X402SellerPaymentObservation", "X402SellerOutcomeObservation"].includes(x402Record?.type);
+  const x402Freshness = ageState(x402ObservedAt, asOf, 24 * 60 * 60 * 1000);
+  const x402SourceState = isSellerBooking && typeof x402Record.state === "string" ? x402Record.state : null;
+  // A producer's corroboration state is evidence about that observation, not
+  // permission to keep calling it current after its observation date ages out.
   const x402State = x402Record === null ? "unknown"
-    : isSellerBooking && x402Record.state !== "unavailable" ? x402Record.state
-      : isSellerBooking ? "unavailable" : ageState(x402ObservedAt, asOf, 24 * 60 * 60 * 1000);
+    : x402SourceState === "unavailable" ? "unavailable"
+      : x402Freshness !== "current" ? x402Freshness
+        : isSellerBooking ? x402SourceState ?? "unknown" : "current";
   // Curation is observed when the chain's movements are explained by curation income (the
   // chain-reconciliation job's reading of the Hive accounts' histories).
   const curationEarned = (chainReconciliation?.earned ?? []).filter((row) => row.account === "Income:Hive:Curation");
@@ -41,7 +46,7 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
   const settled = economy?.crossings?.settled?.count ?? 0;
   const x402ObservationCurrent = x402State === "current" || x402State === "current-empty";
   const unresolved = [
-    ...(ledgerState === "unknown" ? ["ledger economic observation date unavailable"] : ledgerState === "stale" ? [`ledger economic evidence is stale since ${ledgerObservedAt}`] : []),
+    ...(ledgerState === "unknown" ? [ledgerObservedAt === null ? "ledger economic observation date unavailable" : `ledger economic observation date is after the readout: ${ledgerObservedAt}`] : ledgerState === "stale" ? [`ledger economic evidence is stale since ${ledgerObservedAt}`] : []),
     ...(chainReconciliation === undefined || chainReconciliation.error !== undefined
       ? [`ledger reconciliation has not been independently observed${chainReconciliation?.error ? `: ${chainReconciliation.error}` : ""}`]
       : (() => {
@@ -58,8 +63,10 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
       : settled === 0 && committed > 0 ? [`${committed} crossings between members are committed and none has settled, so no member's work has cleared on a credit line`] : []),
     ...(books === undefined || books.error !== undefined ? [`the entity's consolidated books were not read${books?.error ? `: ${books.error}` : ""}`] : []),
     ...(chainReconciliation?.failed > 0 ? [`${chainReconciliation.failed} custody wallet reading(s) failed, so the balances they share were not asserted`] : []),
-    ...(walletState === "unknown" ? ["wallet registry observation date unavailable"] : walletState === "stale" ? [`wallet registry is stale since ${walletObservedAt}`] : []),
-    ...(x402State === "unknown" ? ["x402 settlement evidence unavailable"] : x402State === "stale" ? [`x402 settlement evidence is stale since ${x402ObservedAt}`] : []),
+    ...(walletState === "unknown" ? [walletObservedAt === null ? "wallet registry observation date unavailable" : `wallet registry observation date is after the readout: ${walletObservedAt}`] : walletState === "stale" ? [`wallet registry is stale since ${walletObservedAt}`] : []),
+    ...(x402Freshness === "unknown" ? [x402ObservedAt === null ? "x402 settlement evidence unavailable" : `x402 settlement observation date is after the readout: ${x402ObservedAt}`]
+      : x402Freshness === "stale" ? [`x402 settlement evidence is stale since ${x402ObservedAt}`]
+        : x402State === "unknown" ? ["x402 settlement evidence unavailable"] : []),
     ...(isSellerBooking && x402State === "unavailable" ? ["seller settlement storage or chain corroboration was unavailable; previous cash evidence is held"] : []),
     ...(isSellerBooking && typeof x402Record.error === "string" ? [`seller settlement corroboration failed: ${x402Record.error}`] : []),
     ...(isSellerBooking && x402Record.attributionRefusedCount > 0 ? [`${x402Record.attributionRefusedCount} seller transfer(s) were corroborated on-chain but lack qualified transaction-time seller or tariff attribution, so cash remains unattributed and is never assigned from today's catalogue`] : []),
@@ -67,7 +74,8 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
     ...(isSellerBooking && x402Record.border?.self?.count > 0 ? [`${x402Record.border.self.count} corroborated payment(s) came from the Group's own wallets (${moneyText(x402Record.border.self.value)}): the Group paying itself, never a sale`] : []),
     ...(isSellerBooking && x402Record.border?.related?.count > 0 ? [`${x402Record.border.related.count} payment(s) came from related parties (${moneyText(x402Record.border.related.value)}), relationship evidence alone does not recognize a sale`] : []),
     ...(isSellerBooking && x402Record.state === "current-empty" ? ["no private seller settlement witnesses were present in this observation; this does not prove no payments occurred"] : []),
-    ...(hiveState === "configured-unobserved" ? ["Hive curation is scheduled but its latest reward settlement has not been observed here"] : ["Hive curation schedule is unavailable"]),
+    ...(hiveCuration?.configured !== true ? ["Hive curation schedule is unavailable"]
+      : hiveState === "configured-unobserved" ? ["Hive curation is scheduled but its latest reward settlement has not been observed here"] : []),
     ...(wallets.length === 0 ? ["wallet registry has no wallets"] : [`${wallets.length} registered wallets have no current balance observation in this readout`]),
   ];
   return Object.freeze({
@@ -88,6 +96,7 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
     observations: Object.freeze([
       Object.freeze({ kind: "wallet-registry", state: walletState, observedAt: walletObservedAt, source: "key-management wallet registry", registeredWallets: wallets.length }),
       Object.freeze({ kind: "x402-settlements", state: x402State, observedAt: x402ObservedAt, source: x402Settlement?.path ?? null,
+        sourceState: x402SourceState, freshness: x402Freshness,
         settlementCount: isSellerBooking ? x402Record.witnessCount : Number.isInteger(x402Record?.settlementCount) ? x402Record.settlementCount : null,
         receiptVerifiedCount: isSellerBooking ? Number.isInteger(x402Record.receiptVerifiedCount) ? x402Record.receiptVerifiedCount : null : null,
         confirmedCount: isSellerBooking ? x402Record.confirmedCount : null,
@@ -101,7 +110,8 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
         paymentBooks: x402Record?.books ?? null, keptInLog: isSellerBooking ? x402Record.kept ?? null : null, customerAcceptance: "unobserved",
         revenueRecognized: x402Record?.type === "X402SellerPaymentObservation" ? false : null,
         transactionCount: Number.isInteger(x402Record?.transactionCount) ? x402Record.transactionCount : null }),
-      Object.freeze({ kind: "hive-curation", state: hiveState, source: hiveCuration?.unitPath ?? null, earned: Object.freeze(curationEarned) }),
+      Object.freeze({ kind: "hive-curation", state: hiveState, source: hiveCuration?.unitPath ?? null,
+        scheduleConfigured: typeof hiveCuration?.configured === "boolean" ? hiveCuration.configured : null, earned: Object.freeze(curationEarned) }),
       Object.freeze({ kind: "entity-books", state: books === undefined ? "unobserved" : books.error !== undefined ? "unavailable" : "observed", ...(books ?? {}) }),
       Object.freeze({ kind: "economy", state: economy === undefined ? "unobserved" : "observed", ...(economy ?? {}) }),
       Object.freeze({ kind: "chain-reconciliation", state: chainReconciliation === undefined ? "unobserved" : chainReconciliation.error !== undefined ? "unavailable" : (chainReconciliation.rows ?? []).every((row) => row.state === "agrees") ? "agrees" : "differs",
