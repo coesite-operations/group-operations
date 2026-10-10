@@ -33,7 +33,7 @@
     "@red-cup-engineering/x402-services-section": "workspace:*",
     "@red-cup-engineering/signcell": "workspace:*",
     "@red-cup-engineering/computer-content-engineering-services-section": "workspace:*",
-    "@red-cup-engineering/computer-data-services-section": "workspace:*"
+    "@red-cup-engineering/computer-data-engineering-services-section": "workspace:*"
   },
   "exports": {
     ".": "./src/group-operations.mjs",
