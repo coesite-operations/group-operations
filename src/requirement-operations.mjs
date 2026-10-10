@@ -14,7 +14,7 @@ import { maintainRequirements, readingsOf } from "./requirement-maintenance.mjs"
 export const MEASURE_EVERY_SECONDS = 900;
 
 /** The office whose seat signs the team's readings. */
-export const MAINTAINING_OFFICE = "emsenn/services/561-group/services/561-group-services-section#requirement-maintainer";
+export const MAINTAINING_OFFICE = "emsenn/services/561-group/services/operations-services-section/services/requirement-management-operation-services-section#requirement-maintainer";
 
 export function requirementOperations(binding = {}) {
   const now = () => (binding?.now === undefined ? new Date().toISOString() : binding.now());
