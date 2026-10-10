@@ -21,6 +21,8 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync } fr
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { cell, address } from "@red-cup-engineering/signcell/cell";
+import { admitTypedMark, createTypedMark } from "@red-cup-engineering/signcell/typed-mark";
+import { REQUIREMENT_CLASSES, TYPES } from "./requirement-types.mjs";
 import { semanticBytes } from "@red-cup-engineering/computer-content-engineering-services-section/semiotic-content-address";
 import { signContentClaim, verifyContentClaim } from "@red-cup-engineering/computer-content-engineering-services-section/signed-content-claim";
 import { chargeOfTold, createSemanticRecordJournal } from "@red-cup-engineering/semiotic-eavt-services-section/record-semantic-record";
@@ -30,10 +32,14 @@ export const RULING = "561-group.ruling.v1";
 export const READING = "561-group.requirement-reading.v1";
 export const SEAT_KEY = "561-group.seat-key.v1";
 export const INTAKE = "561-group.requirement-intake.v1";
+export const ASSEMBLY_BREAK = "561-group.assembly-break.v1";
+export const BASELINE = "561-group.rule-baseline.v1";
+/** The requirement management section: the requirement maintenance team, and the journal it keeps. */
+export const REQUIREMENT_SECTION = "lib/emsenn/services/561-group/services/operations-services-section/services/requirement-management-operation-services-section";
 /** The one category each kind is kept under: a reader lists a kind by it. */
-export const CATEGORY = Object.freeze({ [REQUIREMENT]: "requirements", [RULING]: "rulings", [READING]: "readings", [SEAT_KEY]: "seat-keys", [INTAKE]: "requirement-intakes" });
+export const CATEGORY = Object.freeze({ [REQUIREMENT]: "requirements", [RULING]: "rulings", [READING]: "readings", [SEAT_KEY]: "seat-keys", [INTAKE]: "requirement-intakes", [ASSEMBLY_BREAK]: "assembly-breaks", [BASELINE]: "rule-baselines" });
 /** Where a kind's records live inside the section that owns them. */
-export const POOL = Object.freeze({ [REQUIREMENT]: "requirements", [RULING]: "rulings", [INTAKE]: "requirement-intakes" });
+export const POOL = Object.freeze({ [REQUIREMENT]: "requirements", [RULING]: "rulings", [INTAKE]: "requirement-intakes", [ASSEMBLY_BREAK]: "assembly-breaks", [BASELINE]: "rule-baselines" });
 const MEDIA = "application/cbor";
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/u;
 
@@ -124,6 +130,11 @@ export function requirementOf(input) {
   for (const key of ["tier", "changes", "carriedFrom", "note"]) if (input[key] !== undefined) body[key] = text(input[key], key);
   for (const key of ["serves", "after", "realizedBy"]) if (input[key] !== undefined) body[key] = strings(input[key], key);
   if (input.opening !== undefined) body.opening = structuredClone(input.opening);
+  // The requirements-to-specification class, and the party accountable for it (by default its raiser).
+  body.class = input.class ?? "requirement";
+  if (!REQUIREMENT_CLASSES.includes(body.class)) throw new TypeError(`class must be one of ${REQUIREMENT_CLASSES.join(", ")}`);
+  body.authority = text(input.authority ?? `party:${body.raisedBy}`, "authority");
+  if (input.breakClass !== undefined) body.breakClass = slug(input.breakClass, "breakClass");
   const objections = strings(input.objections, "objections");
   const told = sourceEvidence(sources, objections);
   return { body, cell: cell(`party:${body.raisedBy}`, "requires", `requirement:${body.id}`, told) };
@@ -174,18 +185,35 @@ export function seatKey(seat, { directory = seatKeyDirectory() } = {}) {
 
 /* ---------------------------------------------------------------- signing and recording */
 
-const signedBytes = (body, recorded) => semanticBytes({ body, cell: recorded });
+const signedBytes = (mark, recorded) => semanticBytes({ mark, cell: recorded });
 
-/** Sign a body and its cell as `seat`: the record a journal admits. */
-export function signed({ body, cell: recorded, key, at }) {
-  const claim = signContentClaim({ bytes: signedBytes(body, recorded), mediaType: MEDIA, purpose: body.kind, issuer: key.seat, issuedAt: at, privateKey: key.privateKey });
-  return Object.freeze({ body, cell: recorded, address: address(recorded), claim, publicKey: key.publicKey });
+/** The typed mark a body is, under its kind's data type; a body its type refuses is never recorded. */
+export function markOf(body) {
+  const type = TYPES[body.kind];
+  if (type === undefined) throw new TypeError(`${body.kind} has no data type`);
+  const made = createTypedMark(type, body);
+  if (!made.ok) throw new TypeError(`${body.kind} refused by its type: ${made.refusal.message}`);
+  return made.value;
 }
+
+/** Sign a body (as its typed mark) and its cell as `seat`: the record a journal admits. */
+export function signed({ body, cell: recorded, key, at }) {
+  const mark = markOf(body);
+  const claim = signContentClaim({ bytes: signedBytes(mark, recorded), mediaType: MEDIA, purpose: body.kind, issuer: key.seat, issuedAt: at, privateKey: key.privateKey });
+  return Object.freeze({ mark, cell: recorded, address: address(recorded), claim, publicKey: key.publicKey });
+}
+
+/** A record's body: its typed mark's content. */
+export const bodyOf = (record) => record.mark.content;
 
 /** Whether a record's signature holds over its body and cell, and whether its key is one a seat registered. */
 export function verified(record, { registered = new Set() } = {}) {
-  const result = verifyContentClaim({ bytes: signedBytes(record.body, record.cell), claim: record.claim, publicKey: record.publicKey,
-    expectedIssuer: record.claim?.issuer, expectedPurpose: record.body?.kind, expectedMediaType: MEDIA });
+  const kind = record.mark?.content?.kind;
+  if (TYPES[kind] === undefined) return Object.freeze({ ok: false, reason: "not a typed mark of a requirement management kind" });
+  const readmitted = admitTypedMark(TYPES[kind], record.mark);
+  if (!readmitted.ok) return Object.freeze({ ok: false, reason: readmitted.refusal.message });
+  const result = verifyContentClaim({ bytes: signedBytes(record.mark, record.cell), claim: record.claim, publicKey: record.publicKey,
+    expectedIssuer: record.claim?.issuer, expectedPurpose: kind, expectedMediaType: MEDIA });
   if (!result.ok) return Object.freeze({ ok: false, reason: result.reason });
   if (address(record.cell) !== record.address) return Object.freeze({ ok: false, reason: "cell address does not match its triple" });
   return Object.freeze({ ok: true, seat: result.issuer, keyId: result.keyId, trust: registered.has(`${result.issuer}\0${result.keyId}`) ? "registered" : "self-asserted" });
@@ -195,10 +223,11 @@ const toldOf = (recorded) => ({ for: recorded.for.length > 0, against: recorded.
 
 /** Admit one signed record into the journal at `root`, asserted as `seat records <kind>:<id>`. */
 export function admitSigned({ root, record, at }) {
-  const kind = record.body.kind;
+  const body = bodyOf(record);
+  const kind = body.kind;
   return createSemanticRecordJournal({ root, objectKind: kind }).record({
     category: CATEGORY[kind], record, recordedAt: at, told: toldOf(record.cell), origin: record.claim.issuer,
-    relation: { subject: record.claim.issuer, predicate: "records", object: `${kind}:${record.body.id ?? record.body.requirement}` },
+    relation: { subject: record.claim.issuer, predicate: "records", object: `${kind}:${body.id ?? body.requirement}` },
   });
 }
 
@@ -212,12 +241,11 @@ export function registerSeatKey({ root, key, at }) {
 }
 
 /** The journal root a requirement or ruling is recorded under, in the section that owns it. */
-export function recordRootOf({ repositoryRoot, section, kind, id }) {
+export function recordRootOf({ repositoryRoot, kind, id, within }) {
   const pool = POOL[kind];
-  if (pool === undefined) throw new TypeError(`${kind} is not recorded in a section`);
-  const directory = resolve(repositoryRoot, section);
-  if (!directory.startsWith(resolve(repositoryRoot))) throw new TypeError("section must lie inside the repository");
-  return join(directory, "data", pool, slug(id, "id"));
+  if (pool === undefined) throw new TypeError(`${kind} is not recorded in the requirement journal`);
+  // One journal root per record, so seats recording at once never append to one file.
+  return join(resolve(repositoryRoot), REQUIREMENT_SECTION, "data", pool, ...(within === undefined ? [] : [slug(within, "within")]), slug(id, "id"));
 }
 
 /**
@@ -227,7 +255,7 @@ export function recordRootOf({ repositoryRoot, section, kind, id }) {
 export function recordGoverning({ kind, input, repositoryRoot, seat, at = new Date().toISOString(), keyDirectory }) {
   const { body, cell: recorded } = kind === REQUIREMENT ? requirementOf(input) : kind === RULING ? rulingOf(input) : (() => { throw new TypeError(`unknown kind ${kind}`); })();
   const key = seatKey(seat, { directory: keyDirectory });
-  const root = recordRootOf({ repositoryRoot, section: body.section, kind, id: body.id });
+  const root = recordRootOf({ repositoryRoot, kind, id: body.id });
   registerSeatKey({ root, key, at });
   const record = signed({ body, cell: recorded, key, at });
   const admitted = admitSigned({ root, record, at });
@@ -263,10 +291,14 @@ export function poolsUnder(repositoryRoot, kind, { skip = /^(node_modules|\.git|
 export function readGoverning({ repositoryRoot, kind, scratch }) {
   const records = new Map();
   const refused = [];
+  // A record root is a directory holding data/journals; a pool may group roots (assembly breaks by class).
+  const rootsUnder = (directory) => readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isDirectory()).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return existsSync(join(path, "data", "journals")) ? [{ path, name: entry.name }] : rootsUnder(path);
+  });
   for (const pool of poolsUnder(repositoryRoot, kind)) {
-    for (const entry of readdirSync(pool, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      let root = join(pool, entry.name);
+    for (const entry of rootsUnder(pool)) {
+      let root = entry.path;
       if (scratch !== undefined) {
         const copy = join(scratch, createHash("sha256").update(root).digest("hex").slice(0, 24));
         cpSync(join(root, "data", "journals"), join(copy, "data", "journals"), { recursive: true, filter: (source) => !source.includes(`${join("data", "journals", "index")}`) });
@@ -277,17 +309,17 @@ export function readGoverning({ repositoryRoot, kind, scratch }) {
       let rows;
       try {
         registered = new Set(createSemanticRecordJournal({ root, objectKind: SEAT_KEY }).query({ category: CATEGORY[SEAT_KEY] })
-          .filter(({ record }) => verified(record).ok).map(({ record }) => `${record.body.seat}\0${record.body.keyId}`));
+          .filter(({ record }) => verified(record).ok).map(({ record }) => `${bodyOf(record).seat}\0${bodyOf(record).keyId}`));
         rows = createSemanticRecordJournal({ root, objectKind: kind }).query({ category: CATEGORY[kind] });
       } catch (error) {
-        refused.push(Object.freeze({ body: { id: entry.name }, source: join(pool, entry.name), signature: Object.freeze({ ok: false, reason: error.message }) }));
+        refused.push(Object.freeze({ body: { id: entry.name }, source: entry.path, signature: Object.freeze({ ok: false, reason: error.message }) }));
         continue;
       }
       for (const row of rows) {
         const standing = verified(row.record, { registered });
-        const read = Object.freeze({ ...row.record, recordedAt: row.recordedAt, charge: chargeOfTold(row.told), signature: standing, source: join(pool, entry.name) });
+        const read = Object.freeze({ ...row.record, body: row.record.mark?.content ?? {}, recordedAt: row.recordedAt, charge: chargeOfTold(row.told), signature: standing, source: entry.path });
         if (!standing.ok) { refused.push(read); continue; }
-        records.set(row.record.body.id, read);
+        records.set(read.body.id, read);
       }
     }
   }

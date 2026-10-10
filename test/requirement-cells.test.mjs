@@ -8,6 +8,7 @@ import { REQUIREMENT, RULING, existenceOnly, readGoverning, recordGoverning } fr
 import { exercise, maintainRequirements, readingsOf } from "../src/requirement-maintenance.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
+import { detect, plainRecordFiles, recordAssemblyBreak, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
 
 const SECTION = "lib/emsenn/services/561-group/services/561-group-services-section";
 const SEAT = `${SECTION}#requirement-maintainer@test`;
@@ -31,11 +32,15 @@ test("a requirement is recorded as a signed cell in its section and reads back v
   try {
     const recorded = recordGoverning({ kind: REQUIREMENT, input: requirement(), repositoryRoot: root, seat: SEAT, keyDirectory: keys });
     assert.equal(recorded.charge, "held");
-    assert.match(recorded.root, /561-group-services-section\/data\/requirements\/the-board-holds-the-order$/u);
+    assert.match(recorded.root, /requirement-management-operation-services-section\/data\/requirements\/the-board-holds-the-order$/u);
     const { records, refused } = readGoverning({ repositoryRoot: root, kind: REQUIREMENT, scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
     assert.equal(refused.length, 0);
     assert.equal(records.length, 1);
     assert.equal(records[0].body.asks, "everything should be signed cell typed data");
+    assert.equal(records[0].mark.kind, "sign.cell");
+    assert.match(records[0].mark.id, /^ni:\/\/\/sha-256;/u);
+    assert.equal(records[0].body.class, "requirement");
+    assert.equal(records[0].body.authority, "party:emsenn");
     assert.deepEqual([records[0].cell.subject, records[0].cell.predicate, records[0].cell.object], ["party:emsenn", "requires", "requirement:the-board-holds-the-order"]);
     assert.equal(records[0].signature.ok, true);
     assert.equal(records[0].signature.trust, "registered");
@@ -130,4 +135,46 @@ test("a pull request must name the signed requirement it serves", () => {
   assert.equal(pullRequestOrder({ body: "no order here", requirements: records }).ok, false);
   assert.equal(pullRequestOrder({ body: "Serves: requirement:unrecorded-thing", requirements: records }).ok, false);
   assert.equal(pullRequestOrder({ body: "**Serves:** requirement:the-board-holds-the-order", requirements: records }).ok, true);
+});
+
+test("a body its type refuses is never recorded", () => {
+  const { root, keys } = repository();
+  try {
+    assert.throws(() => recordGoverning({ kind: REQUIREMENT, input: requirement({ class: "wish" }), repositoryRoot: root, seat: SEAT, keyDirectory: keys }), /class must be one of/u);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
+});
+
+test("a break class met twice files a requirement to re-architect it", () => {
+  const { root, keys } = repository();
+  try {
+    const scratch = mkdtempSync(join(tmpdir(), "scratch-"));
+    const first = recordAssemblyBreak({ repositoryRoot: root, seat: SEAT, keyDirectory: keys, scratch, input: { breakClass: "unexported-interface", evidence: ["feltos -> signcraft/file-history-store"] } });
+    assert.equal(first.occurrences, 1);
+    assert.equal(first.requirement, undefined);
+    const second = recordAssemblyBreak({ repositoryRoot: root, seat: SEAT, keyDirectory: keys, scratch: mkdtempSync(join(tmpdir(), "scratch-")), input: { breakClass: "unexported-interface", evidence: ["signcraft -> immutable-content-custody-service/file-reference"] } });
+    assert.equal(second.occurrences, 2);
+    assert.equal(second.requirement.id, reArchitectureIdOf("unexported-interface"));
+    const { records } = readGoverning({ repositoryRoot: root, kind: REQUIREMENT, scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
+    assert.equal(records[0].body.breakClass, "unexported-interface");
+    assert.equal(records[0].charge, "contested");
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
+});
+
+test("a design rule's baseline holds today's violations contested, and refuses only new ones", () => {
+  const { root, keys } = repository();
+  try {
+    const records = join(root, SECTION, "data", "records");
+    mkdirSync(records, { recursive: true });
+    writeFileSync(join(records, "old.json"), "{}");
+    execFileSync("git", ["-C", root, "add", "-A"]);
+    assert.deepEqual(plainRecordFiles(root), [`${SECTION}/data/records/old.json`]);
+    const baseline = recordBaseline({ repositoryRoot: root, rule: "drc-4-signed-cells", violations: plainRecordFiles(root), seat: SEAT, keyDirectory: keys });
+    assert.equal(baseline.charge, "contested");
+    assert.equal(detect({ repositoryRoot: root, rule: "drc-4-signed-cells", scratch: mkdtempSync(join(tmpdir(), "scratch-")) }).ok, true);
+    writeFileSync(join(records, "new.json"), "{}");
+    execFileSync("git", ["-C", root, "add", "-A"]);
+    const verdict = detect({ repositoryRoot: root, rule: "drc-4-signed-cells", scratch: mkdtempSync(join(tmpdir(), "scratch-")) });
+    assert.equal(verdict.ok, false);
+    assert.deepEqual(verdict.added, [`${SECTION}/data/records/new.json`]);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
 });

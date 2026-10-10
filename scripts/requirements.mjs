@@ -10,6 +10,9 @@
  *   group-requirements maintain --seat SEAT --journal DIR [--repository ROOT] [--only id,id]
  *   group-requirements check-pull-request [--repository ROOT] < pull-request-body.md
  *   group-requirements brief [--repository ROOT] [--hook]
+ *   group-requirements record-break --seat SEAT [--repository ROOT] < break.json   ({ breakClass, evidence[], repair?, detector? })
+ *   group-requirements baseline --rule drc-4-signed-cells|drc-5-order --seat SEAT [--repository ROOT]
+ *   group-requirements drc --rule drc-4-signed-cells|drc-5-order [--repository ROOT]   (exit 1 on a violation the baseline does not hold)
  *
  * A requirement's input: { id, name, section (repository-relative path of the owning section),
  * raisedBy, asks (the raiser's words, verbatim), sources: [{ words, session?, at?, locator?,
@@ -27,6 +30,7 @@ import { REQUIREMENT, RULING, readGoverning, recordGoverning } from "../src/requ
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { maintainRequirements } from "../src/requirement-maintenance.mjs";
 import { pullRequestOrder } from "../src/requirement-orders.mjs";
+import { detect, plainRecordFiles, recordAssemblyBreak, recordBaseline, unorderedMerges, DRC5_ADOPTED } from "../src/requirement-rules.mjs";
 
 const [command, ...rest] = process.argv.slice(2);
 const options = {};
@@ -91,8 +95,29 @@ try {
       process.stdout.write(options.hook ? `${JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: text } })}\n` : `${text}\n`);
       break;
     }
+    case "record-break": {
+      const scratch = mkdtempSync(join(tmpdir(), "group-requirements-"));
+      try { print(recordAssemblyBreak({ repositoryRoot: repositoryRoot(), input: JSON.parse(stdin()), seat: seat(), scratch })); } finally { rmSync(scratch, { recursive: true, force: true }); }
+      break;
+    }
+    case "baseline": {
+      const rule = options.rule;
+      const violations = rule === "drc-4-signed-cells" ? plainRecordFiles(repositoryRoot()) : rule === "drc-5-order" ? unorderedMerges(repositoryRoot(), { since: DRC5_ADOPTED }) : undefined;
+      if (violations === undefined) throw new TypeError("--rule is drc-4-signed-cells or drc-5-order");
+      print(recordBaseline({ repositoryRoot: repositoryRoot(), rule, violations, seat: seat() }));
+      break;
+    }
+    case "drc": {
+      const scratch = mkdtempSync(join(tmpdir(), "group-requirements-"));
+      try {
+        const verdict = detect({ repositoryRoot: repositoryRoot(), rule: options.rule, scratch });
+        print({ ...verdict, added: verdict.added.slice(0, 50) });
+        if (!verdict.ok) process.exitCode = 1;
+      } finally { rmSync(scratch, { recursive: true, force: true }); }
+      break;
+    }
     default:
-      throw new TypeError("commands: record-requirement, record-ruling, read, convert, maintain, check-pull-request, brief");
+      throw new TypeError("commands: record-requirement, record-ruling, read, convert, maintain, check-pull-request, brief, record-break, baseline, drc");
   }
 } catch (error) {
   process.stderr.write(`group-requirements: ${error.message}\n`);

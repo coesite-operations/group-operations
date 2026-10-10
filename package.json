@@ -30,7 +30,10 @@
     "@red-cup-engineering/feltos": "workspace:*",
     "@red-cup-engineering/treasury-observation-service": "0.5.1",
     "@red-cup-engineering/exact-number-data-service": "workspace:*",
-    "@red-cup-engineering/x402-services-section": "workspace:*"
+    "@red-cup-engineering/x402-services-section": "workspace:*",
+    "@red-cup-engineering/signcell": "workspace:*",
+    "@red-cup-engineering/computer-content-engineering-services-section": "workspace:*",
+    "@red-cup-engineering/computer-data-services-section": "workspace:*"
   },
   "exports": {
     ".": "./src/group-operations.mjs",
@@ -53,7 +56,9 @@
     "./requirement-operations": "./src/requirement-operations.mjs",
     "./requirement-orders": "./src/requirement-orders.mjs",
     "./scripts/requirements": "./scripts/requirements.mjs",
-    "./primary-health": "./src/primary-health.mjs"
+    "./primary-health": "./src/primary-health.mjs",
+    "./requirement-types": "./src/requirement-types.mjs",
+    "./requirement-rules": "./src/requirement-rules.mjs"
   },
   "name": "@561-group/group-operations",
   "private": true,

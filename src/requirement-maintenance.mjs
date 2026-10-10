@@ -196,8 +196,8 @@ export function maintainRequirements({ repositoryRoot, journalRoot, seat, poster
 /** The team's recorded readings of one requirement, latest last. */
 export function readingsOf({ journalRoot, requirement }) {
   return createSemanticRecordJournal({ root: journalRoot, objectKind: READING }).query({ category: CATEGORY[READING] })
-    .filter(({ record }) => requirement === undefined || record.body.requirement === requirement)
-    .map(({ record, recordedAt, told }) => Object.freeze({ ...record.body, recordedAt, seat: record.claim.issuer, charge: chargeOfTold(told) }));
+    .filter(({ record }) => requirement === undefined || record.mark.content.requirement === requirement)
+    .map(({ record, recordedAt, told }) => Object.freeze({ ...record.mark.content, recordedAt, seat: record.claim.issuer, charge: chargeOfTold(told) }));
 }
 
 export { REQUIREMENT, RULING };

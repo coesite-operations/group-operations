@@ -9,7 +9,7 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { cell } from "@red-cup-engineering/signcell/cell";
-import { INTAKE, REQUIREMENT, admitSigned, recordGoverning, registerSeatKey, seatKey, signed } from "./requirement-cells.mjs";
+import { INTAKE, REQUIREMENT, admitSigned, recordGoverning, recordRootOf, registerSeatKey, seatKey, signed } from "./requirement-cells.mjs";
 
 export { INTAKE };
 
@@ -135,11 +135,11 @@ export function intakeFiles(repositoryRoot) {
 export function recordIntake({ repositoryRoot, file, seat, at, keyDirectory, carried }) {
   const index = JSON.parse(readFileSync(file, "utf8"));
   const named = (index.prompts ?? []).flatMap((prompt) => (prompt.records ?? []).map((record) => record.id));
-  const body = { kind: INTAKE, id: index.id, name: index.name, statement: index.statement, recordedBy: index["recorded-by"], customer: index.customer,
-    notPlayedOnTheBoard: index["not-played-on-the-board"], prompts: index.prompts, carriedFrom: relative(resolve(repositoryRoot), file) };
+  const body = Object.fromEntries(Object.entries({ kind: INTAKE, id: index.id, name: index.name, statement: index.statement, recordedBy: index["recorded-by"], customer: index.customer,
+    notPlayedOnTheBoard: index["not-played-on-the-board"], prompts: index.prompts, carriedFrom: relative(resolve(repositoryRoot), file) }).filter(([, value]) => value !== undefined));
   const told = { for: named.filter((id) => carried.has(id)).map((id) => `signed:requirement:${id}`), against: named.filter((id) => !carried.has(id)).map((id) => `unsigned:requirement:${id}`) };
   const key = seatKey(seat, { directory: keyDirectory });
-  const root = join(dirname(file), "..", "..", "requirement-intakes", index.id);
+  const root = recordRootOf({ repositoryRoot, kind: INTAKE, id: index.id });
   registerSeatKey({ root, key, at });
   const record = signed({ body, cell: cell(`seat:${seat}`, "carried", `intake:${index.id}`, told), key, at });
   return { id: index.id, root, admitted: admitSigned({ root, record, at }) };
@@ -153,7 +153,7 @@ export function convertRequirements({ repositoryRoot, seat, at = new Date().toIS
   for (const file of legacyRequirementFiles(repositoryRoot)) {
     try {
       const input = requirementInputOf(repositoryRoot, file, { utterances });
-      if (existsSync(join(resolve(repositoryRoot), input.section, "data", "requirements", input.id, "data", "journals"))) { results.push({ id: input.id, skipped: "already signed" }); continue; }
+      if (existsSync(join(recordRootOf({ repositoryRoot, kind: REQUIREMENT, id: input.id }), "data", "journals"))) { results.push({ id: input.id, skipped: "already signed" }); continue; }
       results.push(recordGoverning({ kind: REQUIREMENT, input, repositoryRoot, seat, at, keyDirectory }));
     } catch (error) { refused.push({ file: relative(resolve(repositoryRoot), file), reason: error.message }); }
   }
