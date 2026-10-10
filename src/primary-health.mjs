@@ -75,7 +75,8 @@ async function answerOf(target, { probe, timeoutMs }) {
     const answer = { status: response.status };
     const retryAfter = response.headers?.get?.("retry-after");
     if (retryAfter) answer.retryAfter = retryAfter;
-    if (target.kind === "machine" && response.status < 400) {
+    // An unready machine still reports its running release and latest receipt with HTTP 503.
+    if (target.kind === "machine" && (response.status < 400 || response.status === 503)) {
       try {
         const body = await response.json();
         for (const key of ["release", "artifact"]) {

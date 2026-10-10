@@ -170,6 +170,42 @@ test("non-machine and failed HTTP answers do not claim running release evidence"
   assert.equal(Object.hasOwn(brokenJson.systems[0], "release"), false);
 });
 
+test("unready HTTP 503 machines preserve running identity and their separate latest receipt", async (t) => {
+  for (const [charge, retryAfter] of [["contested", "120"], ["denied", undefined]]) await t.test(charge, async () => {
+    const body = fixture();
+    body.deployment.outcome = "failure";
+    body.deployment.stage = "live-check";
+    const { systems: [system] } = await read(body, { status: 503, retryAfter });
+    assert.deepEqual(system, {
+      id: target.id, kind: target.kind, url: target.public, charge, status: 503,
+      ...(retryAfter === undefined ? {} : { retryAfter }), ...body,
+    });
+    assert.notEqual(system.release, system.deployment.revision);
+    assert.notEqual(system.artifact, system.deployment.storePath);
+    assert.equal(system.sources[0].commit, "running-source");
+    const changedBody = structuredClone(body);
+    changedBody.deployment.runAttempt = "3";
+    const changes = primaryHealthChanges({ systems: [system] }, await read(changedBody, { status: 503, retryAfter }));
+    assert.equal(changes.length, 1, "same-charge failures keep new attempt evidence");
+    assert.equal(changes[0].was, charge);
+    assert.equal(changes[0].charge, charge);
+  });
+});
+
+test("malformed HTTP 503 JSON retains charge without inventing release evidence", async () => {
+  for (const [charge, retryAfter] of [["contested", "120"], ["denied", undefined]]) {
+    const { systems: [system] } = await readPrimaryHealth({
+      targets: [target], clock: () => "now",
+      probe: async () => ({ status: 503, headers: { get: () => retryAfter ?? null }, json: async () => { throw new SyntaxError("not JSON"); } }),
+    });
+    assert.equal(system.charge, charge);
+    for (const key of ["release", "artifact", "sources", "deployment"]) assert.equal(Object.hasOwn(system, key), false, key);
+  }
+  const { systems: [property] } = await read(fixture(), { kind: "property", status: 503, retryAfter: "120" });
+  assert.equal(property.charge, "contested");
+  for (const key of ["release", "artifact", "sources", "deployment"]) assert.equal(Object.hasOwn(property, key), false, key);
+});
+
 test("the pulse journal payload carries running identity and changed attempt evidence using in-memory ports", async () => {
   // Evaluate the exact exported function body with memory-only file/journal ports. This does
   // not invoke its filesystem-bound closure or the existing installed-journal integration test.
