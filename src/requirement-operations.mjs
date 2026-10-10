@@ -7,7 +7,7 @@
 import { join } from "node:path";
 import { operation } from "@red-cup-engineering/computer-system-engine/rpc/operation";
 import { repositoryRootOf } from "@red-cup-engineering/metroplat/offices";
-import { REQUIREMENT, RULING, readGoverning } from "./requirement-cells.mjs";
+import { readPools } from "./requirement-pools.mjs";
 import { maintainRequirements, readingsOf } from "./requirement-maintenance.mjs";
 
 /** How often the node measures again: the enterprise loop derives every turn, the checks run at most this often. */
@@ -45,10 +45,13 @@ export function requirementOperations(binding = {}) {
     }),
     operation({
       verb: "requirements", inputFormat: "json", outputFormat: "json",
-      summary: "The signed requirements and rulings recorded in the node's repository, each with its charge and its signature's standing.",
-      description: "Domain: { kind?: requirement | ruling }. Returns { records: [{ body, address, charge, signature, recordedAt, source }], refused }.",
+      summary: "The requirements and rulings in the July pools of the node's repository and its mounted sections, each with its charge and its attestation's standing.",
+      description: "Domain: { kind?: requirement | ruling }. Returns { records: [{ body, address, charge, signature, recordedAt, source }], refused }, read as the maintenance loop reads them.",
       reads: ["repository"], effects,
-      run: (input) => readGoverning({ repositoryRoot: repositoryRoot(input), kind: input?.kind === "ruling" ? RULING : REQUIREMENT, scratch: join(binding.dataRoot, "requirement-maintenance", "scratch") }),
+      run: (input) => {
+        const pools = readPools({ repositoryRoot: repositoryRoot(input), ...(binding.schemaDirectory ? { schemaDirectory: binding.schemaDirectory } : {}) });
+        return { records: input?.kind === "ruling" ? pools.rulings : pools.requirements, refused: pools.refused };
+      },
     }),
     operation({
       verb: "requirement-readings", inputFormat: "json", outputFormat: "json",
