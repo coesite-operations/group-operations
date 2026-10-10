@@ -60,13 +60,15 @@ export function sellerPaymentBooksOf(settlements, { booked = new Set() } = {}) {
 }
 
 /** Write a complete receipt projection. An incomplete provider read cannot
- * erase previous evidence; no authoritative enterprise ledger or authored entry is changed. */
-export async function writeSellerPaymentBooks(privateData, corroboration, { booked } = {}) {
+ * erase previous evidence; no authoritative enterprise ledger or authored entry is changed.
+ * Given `held`, every settlement the node's journal keeps, the projection is of those: the
+ * journal never loses a corroborated transfer, so a partial read projects them all. */
+export async function writeSellerPaymentBooks(privateData, corroboration, { booked, held } = {}) {
   if (!privateData || typeof privateData !== "string") throw new TypeError("cash projection requires the receiving node's private data directory");
-  if (!["current", "current-empty"].includes(corroboration.state) || corroboration.refusedCount > 0) {
+  if (held === undefined && (!["current", "current-empty"].includes(corroboration.state) || corroboration.refusedCount > 0)) {
     return Object.freeze({ state: "held", reason: "incomplete-payment-observation", rewritten: false, revenueRecognized: false });
   }
-  const projected = sellerPaymentBooksOf(corroboration.settlements, { booked });
+  const projected = sellerPaymentBooksOf(held ?? corroboration.settlements, { booked });
   if (projected.books.length === 0) return Object.freeze({ state: "no-new-cash", books: [],
     alreadyRepresented: projected.alreadyRepresented, rewritten: false, revenueRecognized: false });
   const directory = join(privateData, "records", "x402", "cash");
