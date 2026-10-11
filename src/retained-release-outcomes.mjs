@@ -56,7 +56,7 @@ async function checkedDirectory(path) {
   return lstat(path);
 }
 
-async function retainedFile(root, directory, maxBytes) {
+async function retainedFile(root, directory, maxBytes, remainingBytes) {
   let file;
   try {
     const parent = await checkedDirectory(join(root, directory));
@@ -64,10 +64,11 @@ async function retainedFile(root, directory, maxBytes) {
     const before = await lstat(path);
     if (!before.isFile() || before.isSymbolicLink()) return unknown("nonregular-outcome");
     if (before.size > maxBytes) return unknown("oversize-outcome");
+    if (before.size > remainingBytes) return unknown("byte-limit");
     file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const opened = await file.stat();
     if (!opened.isFile() || !sameFile(before, opened)) return unknown("changed-outcome");
-    const bytes = Buffer.alloc(Math.min(opened.size + 1, maxBytes + 1));
+    const bytes = Buffer.alloc(Math.min(opened.size + 1, maxBytes + 1, remainingBytes + 1));
     let length = 0;
     while (length < bytes.length) {
       const { bytesRead } = await file.read(bytes, length, bytes.length - length, length);
@@ -81,6 +82,7 @@ async function retainedFile(root, directory, maxBytes) {
       || opened.size !== after.size || opened.mtimeMs !== after.mtimeMs || opened.ctimeMs !== after.ctimeMs
       || length !== opened.size) return unknown("changed-outcome");
     if (length > maxBytes) return unknown("oversize-outcome");
+    if (length > remainingBytes) return unknown("byte-limit");
     return { state: "read", bytes: bytes.subarray(0, length) };
   } catch (error) {
     return unknown(error.code === "ENOENT" ? "absent-outcome" : "unreadable-outcome");
@@ -108,7 +110,10 @@ export async function readRetainedReleaseOutcomes({ binding: input, maxEntries =
         entries.push({ directory: entry.name, ...unknown("nonregular-attempt") });
         continue;
       }
-      const retained = await retainedFile(binding.root, entry.name, Math.min(maxBytes, maxTotalBytes - totalBytes));
+      const retained = await retainedFile(binding.root, entry.name, maxBytes, maxTotalBytes - totalBytes);
+      // Exhausting this scan's budget says nothing about an envelope's own size.
+      // Preserve only entries actually examined before the incomplete boundary.
+      if (retained.reason === "byte-limit") return { state: "unknown", reason: "byte-limit", entries };
       entries.push({ directory: entry.name, ...retained });
       totalBytes += retained.bytes?.length ?? 0;
       if (totalBytes >= maxTotalBytes) return { state: "unknown", reason: "byte-limit", entries };

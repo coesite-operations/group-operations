@@ -47,7 +47,7 @@ export function primaryHealthFindingsOf({ poster, primaryRecords = [], primarySt
     if (rows.some(row => typeof row.id !== "string" || !isInstant(row.recordedAt)
       || Date.parse(row.recordedAt) > Date.parse(at))) continue;
     const latest = rows.reduce((a, b) => Date.parse(a.recordedAt) > Date.parse(b.recordedAt) ? a : b).recordedAt;
-    const current = rows.filter(row => row.recordedAt === latest);
+    const current = rows.filter(row => Date.parse(row.recordedAt) === Date.parse(latest));
     const charges = new Set(current.map(row => row.record.charge));
     const charge = charges.size === 1 ? [...charges][0] : "contested";
     const tag = tagOf("primary-system-health", system);
@@ -90,7 +90,7 @@ export function primaryHealthFindingsOf({ poster, primaryRecords = [], primarySt
       && ["ready", "failed"].includes(row.record.serviceHealth?.state));
     if (serviceRows.length > 0) {
       const latestServiceAt = serviceRows.reduce((a, b) => Date.parse(a.record.at) > Date.parse(b.record.at) ? a : b).record.at;
-      const currentService = serviceRows.filter(row => row.record.at === latestServiceAt);
+      const currentService = serviceRows.filter(row => Date.parse(row.record.at) === Date.parse(latestServiceAt));
       const tag = tagOf("work-peer-service-health", peer);
       if (currentService.some(row => row.record.serviceHealth.state === "failed")) {
         report({ system: peer, law: PRIMARY_HEALTH_LAW, subject: `work-peer-service:${peer}`, tag,
@@ -101,7 +101,8 @@ export function primaryHealthFindingsOf({ poster, primaryRecords = [], primarySt
           && readyEvidence(row.record.serviceHealth) && row.record.serviceHealth.nativeActorOk === true)
         && !validPeerRecords.some(row => row.record.peer === peer
           && (row.record.serviceHealth !== undefined || row.record.why?.startsWith("health-"))
-          && Date.parse(row.record.at) > Date.parse(latestServiceAt))) {
+          && (Date.parse(row.record.at) > Date.parse(latestServiceAt)
+            || (Date.parse(row.record.at) === Date.parse(latestServiceAt) && !currentService.includes(row))))) {
         tags.add(tag); currentService.forEach(row => evidence.add(row.id));
       }
     }

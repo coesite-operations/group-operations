@@ -123,3 +123,35 @@ test("healthy input availability does not invent a measured domain from empty jo
     return true;
   });
 });
+
+test("sparse and inherited journal entries are unavailable without hiding independent faults", () => {
+  const inherited = new Array(1);
+  Object.setPrototypeOf(inherited, Object.assign(Object.create(Array.prototype), { 0: primary("held", 60) }));
+  for (const rows of [new Array(1), [, primary("held", 60)], inherited]) {
+    const { operation } = operationWith({ primaryRead: () => rows });
+    const result = operation.execute({ poster });
+    assertPeerReachesHouse(result);
+    assert.deepEqual(unknown(result, "primary-journal").failure, { type: "MalformedInput", code: "INVALID_SHAPE" });
+  }
+  for (const rows of [new Array(1), [, ...faults()]]) {
+    const { operation } = operationWith({ primaryRead: () => [primary("denied", 60)], peerRead: () => rows });
+    const result = operation.execute({ poster });
+    assert.equal(result.openings.length, 1);
+    assert.match(result.openings[0].opening.law, /primary-system:/);
+    assert.deepEqual(unknown(result, "peer-journal").failure, { type: "MalformedInput", code: "INVALID_SHAPE" });
+  }
+});
+
+test("unread status entries stay unavailable rather than selecting around holes or trusting an overridden every", () => {
+  const good = status.systems[0];
+  const inherited = new Array(1);
+  Object.setPrototypeOf(inherited, Object.assign(Object.create(Array.prototype), { 0: good }));
+  const overridden = [null];
+  overridden.every = () => true;
+  for (const systems of [new Array(1), [good, ,], [, good], inherited, overridden]) {
+    const { operation } = operationWith({ readStatus: () => ({ ...status, systems }), primaryRead: () => [primary("held", 60)] });
+    const result = operation.execute({ poster });
+    assertPeerReachesHouse(result);
+    assert.deepEqual(unknown(result, "primary-status").failure, { type: "MalformedInput", code: "INVALID_SHAPE" });
+  }
+});

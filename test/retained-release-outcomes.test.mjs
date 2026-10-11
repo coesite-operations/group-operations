@@ -115,3 +115,25 @@ test("symlink root, symlink attempt, symlink outcome and nonregular outcome are 
   for (const entry of reading.entries) { assert.equal(entry.state, "unknown"); assert.equal("bytes" in entry, false); }
   assert.equal(JSON.stringify(reading).includes("do-not-read-outside"), false);
 });
+
+test("aggregate exhaustion is incomplete reading, never a false per-envelope oversize observation", async (t) => {
+  const f = await fixture(t);
+  const expected = [];
+  for (const id of ["701", "702", "703"]) expected.push(await f.put(envelope({ id })));
+  const size = expected[0].bytes.length;
+  assert.ok(expected.every(entry => entry.bytes.length === size));
+  for (const maxTotalBytes of [size, size * 2, Math.floor(size * 2.5)]) {
+    const reading = await readRetainedReleaseOutcomes({ binding: f.binding, maxBytes: size, maxTotalBytes });
+    assert.equal(reading.state, "unknown");
+    assert.equal(reading.reason, "byte-limit");
+    assert.ok(reading.entries.length > 0 && reading.entries.length < expected.length);
+    assert.ok(reading.entries.every(entry => entry.state === "read" && entry.reason === undefined));
+    assert.ok(reading.entries.reduce((total, entry) => total + entry.bytes.length, 0) <= maxTotalBytes);
+    for (const entry of reading.entries) assert.deepEqual(entry.bytes, expected.find(other => other.directory === entry.directory).bytes);
+  }
+  const complete = await readRetainedReleaseOutcomes({ binding: f.binding, maxBytes: size, maxTotalBytes: size * 4 });
+  assert.equal(complete.state, "read");
+  assert.equal(complete.entries.length, 3);
+  const actualOversize = await readRetainedReleaseOutcomes({ binding: f.binding, maxBytes: size - 1, maxTotalBytes: size * 4 });
+  assert.ok(actualOversize.entries.every(entry => entry.reason === "oversize-outcome"));
+});

@@ -205,3 +205,55 @@ test("latest-told liveness recovery survives below-threshold silence without bec
   assert.equal(reconcileDerivedOpenings(board, { ...result, openings: [] }).settle[0].move, "resolve");
   assert.ok(result.domain.tags.every(tag => !tag.startsWith("work-peer-service-health-")));
 });
+
+test("equivalent instant spellings retain every contradictory primary witness in either order", () => {
+  const fault = primaryHealthFindingsOf({ poster, primaryRecords: [primary("denied", 0)], at: at(1) });
+  const board = boardOf(fault.openings.map(entry => entry.opening), 6);
+  for (const instant of ["2026-10-10T00:05:00Z", "2026-10-10T01:05:00+01:00", "2026-10-09T20:05:00-04:00"]) {
+    assert.equal(Date.parse(instant), Date.parse(at(5)));
+    const denied = { ...primary("denied", 5, "same-instant-denied"), recordedAt: instant };
+    const held = primary("held", 5, "same-instant-held");
+    for (const primaryRecords of [[held, denied], [denied, held]]) {
+      const result = primaryHealthFindingsOf({ poster, primaryRecords,
+        primaryStatus: { at: at(6), systems: [{ id: "cold-red-gate", charge: "held", kind: "machine", readiness }] }, at: at(6) });
+      assert.equal(result.openings.length, 1);
+      assert.match(result.openings[0].opening.observation, /contested/);
+      assert.deepEqual(new Set(result.openings[0].opening.evidence), new Set([held.id, denied.id]));
+      const plan = reconcileDerivedOpenings(board, { ...result, openings: result.openings.map(entry => entry.opening) });
+      assert.ok(plan.settle.every(move => move.move !== "resolve"));
+    }
+  }
+});
+
+test("concurrent unqualified service observations cannot expose ready evidence as recovery", () => {
+  const original = [];
+  const journal = { query: () => original, record: row => original.push({ ...row, id: `concurrent-${original.length}` }) };
+  notePeerHealth(journal, { observer: "bare-cedar-fog", peer, now: at(0), health: { ready: false, reason: "health-unready",
+    readiness: { state: "failed", service: "cold-red-gate.561.group", ok: false, nativeActorOk: false } } });
+  const fault = primaryHealthFindingsOf({ poster, peerRecords: original, at: at(0) });
+  const board = boardOf(fault.openings.map(entry => entry.opening), 6);
+  notePeerHealth(journal, { observer: "bare-cedar-fog", peer, now: at(5), health: { ready: true, reason: "health-ready",
+    readiness: { ...readiness, service: "cold-red-gate.561.group" } } });
+  for (const instant of [at(5), "2026-10-10T00:05:00Z", "2026-10-10T01:05:00+01:00"]) {
+    for (const health of [{ ready: false, reason: "health-timeout" }, { ready: false, reason: "health-body-invalid" },
+      { ready: false, reason: "health-unready", readiness: { state: "unknown" } },
+      { ready: false, reason: "health-unready", readiness: { state: "failed", ok: false } }]) {
+      const records = [...original];
+      notePeerHealth({ query: () => records, record: row => records.push({ ...row, id: "independent-concurrent" }) },
+        { observer: "independent-observer", peer, now: instant, health });
+      for (const peerRecords of [records, [...records].reverse()]) {
+        const result = primaryHealthFindingsOf({ poster, peerRecords, at: at(6) });
+        const plan = reconcileDerivedOpenings(board, { ...result, openings: result.openings.map(entry => entry.opening) });
+        assert.ok(plan.settle.every(move => move.move !== "resolve"), `${instant} ${health.reason}`);
+        if (health.readiness?.state === "failed") assert.ok(result.openings.some(entry => /work-peer-service:/.test(entry.opening.law)));
+        else assert.ok(result.domain.tags.every(tag => !tag.startsWith("work-peer-service-health-")));
+      }
+    }
+  }
+  // A genuinely older unqualified observation does not veto a later qualified recovery.
+  const older = [...original];
+  notePeerHealth({ query: () => older, record: row => older.push({ ...row, id: "older-unknown" }) },
+    { observer: "independent-observer", peer, now: at(4), health: { ready: false, reason: "health-timeout" } });
+  const recovered = primaryHealthFindingsOf({ poster, peerRecords: older, at: at(6) });
+  assert.equal(reconcileDerivedOpenings(board, { ...recovered, openings: [] }).settle[0].move, "resolve");
+});

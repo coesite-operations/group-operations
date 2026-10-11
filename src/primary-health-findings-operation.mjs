@@ -12,11 +12,19 @@ const readJournalWitnesses = ({ root, objectKind, category }) =>
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const instant = value => typeof value === "string" && Number.isFinite(Date.parse(value));
 const charges = new Set(["unknown", "held", "denied", "contested"]);
-const statusShape = value => object(value) && instant(value.at) && Array.isArray(value.systems)
-  && value.systems.every(row => object(row) && typeof row.id === "string"
+// Reader ports can return arrays that JSON cannot represent. Holes are unread entries,
+// never an empty or fully validated input. Keep independent inputs available.
+const denseEvery = (rows, predicate) => {
+  if (!Array.isArray(rows)) return false;
+  for (let index = 0; index < rows.length; index += 1) {
+    if (!Object.hasOwn(rows, index) || !predicate(rows[index])) return false;
+  }
+  return true;
+};
+const statusShape = value => object(value) && instant(value.at) && denseEvery(value.systems, row => object(row) && typeof row.id === "string"
     && ["machine", "property"].includes(row.kind) && charges.has(row.charge)
     && (row.readiness === undefined || object(row.readiness)));
-const witnessShape = (rows, kind) => Array.isArray(rows) && rows.every(row => object(row)
+const witnessShape = (rows, kind) => denseEvery(rows, row => object(row)
   && typeof row.id === "string" && instant(row.recordedAt) && object(row.record)
   && typeof row.told?.for === "boolean" && typeof row.told?.against === "boolean"
   && (kind === PRIMARY_HEALTH_KIND
