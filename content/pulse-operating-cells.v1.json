@@ -1,0 +1,167 @@
+{
+  "schemaVersion": "pulse-operating-cell-catalog.v1",
+  "observedAt": "2026-10-11T15:10:00Z",
+  "principal": "561-group",
+  "source": "Cold Red Gate Work Arena",
+  "cells": [
+    {
+      "work_ref": "ni:///sha-256;1Fg_7a0Zwix3wFzkD4zTKLa2fQemXwTJsM78TCkCqpk",
+      "service_id": "public-micro-enterprise-formation",
+      "endeavor_id": "form-and-receive-micro-enterprise",
+      "consumer": "561 Group / Causeway Public Services",
+      "office_bundle": [
+        "corporate-secretary",
+        "configuration-manager",
+        "character-resources",
+        "task-dispatcher",
+        "pilot-department",
+        "quality-operations"
+      ],
+      "staffing_demand": {
+        "minimum_roles": [
+          "operating-owner",
+          "qualified-worker",
+          "independent-assayer"
+        ],
+        "capacity": "unknown"
+      },
+      "engineering_capabilities": [
+        "parameterized-office-records",
+        "parameterized-duty-skill-binding",
+        "endeavor-campaign-runtime",
+        "activitypub-work-intake",
+        "receiver-bound-acceptance"
+      ],
+      "acceptance_test": "enterprise has identity, bounded authority, work intake, service interface, cadence, staffed roles, and independent receiver acceptance"
+    },
+    {
+      "work_ref": "ni:///sha-256;XrkNwQVp5lQU8hW01LZFuA1vmkvnJKRswuweEQlIejc",
+      "service_id": "personal-scent-foundry",
+      "endeavor_id": "custom-scent-order-to-reorder",
+      "consumer": "Personal Scent Foundry",
+      "office_bundle": [
+        "task-dispatcher",
+        "pilot-department",
+        "quality-operations"
+      ],
+      "staffing_demand": {
+        "minimum_roles": [
+          "order-operator",
+          "fulfillment-provider",
+          "independent-assayer"
+        ],
+        "capacity": "unknown"
+      },
+      "engineering_capabilities": [
+        "parameterized-order-workflow",
+        "batch-provenance",
+        "reorder-identity",
+        "receiving-record"
+      ],
+      "acceptance_test": "a normal customer can order, receive, and later reorder an accepted custom scent without Leader intervention"
+    },
+    {
+      "work_ref": "ni:///sha-256;pJ_EiO2uoC5v0lIY2vaeePtKvKPAU39RBj9L3qpnbEs",
+      "service_id": "sensory-materials-engineering",
+      "endeavor_id": "sensory-material-qualification",
+      "consumer": "Sensory Materials Engineering",
+      "office_bundle": [
+        "configuration-manager",
+        "task-dispatcher",
+        "quality-operations"
+      ],
+      "staffing_demand": {
+        "minimum_roles": [
+          "technical-operator",
+          "qualified-reviewer",
+          "independent-assayer"
+        ],
+        "capacity": "unknown"
+      },
+      "engineering_capabilities": [
+        "evidence-bound-work-order",
+        "lab-result-provenance",
+        "qualification-receiving"
+      ],
+      "acceptance_test": "customer evidence is converted into an attributable material qualification decision with independent receiving"
+    },
+    {
+      "work_ref": "ni:///sha-256;q4bvnQOO7_26ez-unTWjajom_B5oXhBrGvaWkq_3McQ",
+      "service_id": "olfactory-experience-systems",
+      "endeavor_id": "olfactory-scene-operation",
+      "consumer": "Olfactory Experience Systems",
+      "office_bundle": [
+        "configuration-manager",
+        "task-dispatcher",
+        "pilot-department",
+        "quality-operations"
+      ],
+      "staffing_demand": {
+        "minimum_roles": [
+          "scene-operator",
+          "renderer-provider",
+          "independent-assayer"
+        ],
+        "capacity": "unknown"
+      },
+      "engineering_capabilities": [
+        "scene-parameter-schema",
+        "renderer-adapter-contract",
+        "preflight-validator",
+        "operating-receipt"
+      ],
+      "acceptance_test": "an external designer can author and preflight a scene and receive a renderer-specific operating result"
+    },
+    {
+      "work_ref": "ni:///sha-256;hri1yyTOTwCkHvDF-s8SP7qywzWPuzR4-6VuQ2UY0-U",
+      "service_id": "olfactory-metrology",
+      "endeavor_id": "measurement-repeatability-service",
+      "consumer": "Olfactory Metrology",
+      "office_bundle": [
+        "configuration-manager",
+        "quality-operations",
+        "task-dispatcher"
+      ],
+      "staffing_demand": {
+        "minimum_roles": [
+          "measurement-operator",
+          "qualified-metrologist",
+          "independent-assayer"
+        ],
+        "capacity": "unknown"
+      },
+      "engineering_capabilities": [
+        "measurement-evidence-schema",
+        "calibration-lineage",
+        "comparison-assay"
+      ],
+      "acceptance_test": "measurement program receives reproducible repeatability/comparability evidence without Operations inventing scientific conclusions"
+    },
+    {
+      "work_ref": "ni:///sha-256;wsmOASEfPmziVScZsqPrk6o6GzNaZOBcMVjOWePA9KA",
+      "service_id": "land-relations-title-intelligence",
+      "endeavor_id": "title-evidence-intake-to-decision-support",
+      "consumer": "Land Relations and Title Intelligence",
+      "office_bundle": [
+        "corporate-secretary",
+        "task-dispatcher",
+        "quality-operations"
+      ],
+      "staffing_demand": {
+        "minimum_roles": [
+          "evidence-operator",
+          "domain-qualified-reviewer",
+          "independent-assayer"
+        ],
+        "capacity": "unknown"
+      },
+      "engineering_capabilities": [
+        "source-provenance",
+        "typed-title-evidence",
+        "case-workflow",
+        "receiver-bound-report"
+      ],
+      "acceptance_test": "bounded title/land evidence reaches the authorized receiver with provenance and unresolved legal uncertainty preserved"
+    }
+  ]
+}
