@@ -39,6 +39,8 @@ function summarizeNotices(rows, binding) {
         notice.thresholdPercent < 0 || notice.thresholdPercent > 100)
       throw new TypeError('invalid provider notice envelope');
     if (notice.provider !== binding.provider || notice.accountRef !== binding.accountRef) continue;
+    if (Date.parse(notice.receivedAt) > Date.parse(binding.observedAt))
+      throw new TypeError('provider notice received after observation cutoff');
     matching++;
     const key = [notice.periodResetAt, notice.operationClass, notice.thresholdPercent].join('|');
     const prior = ids.get(notice.noticeId);
