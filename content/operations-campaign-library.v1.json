@@ -1,0 +1,151 @@
+{
+  "schemaVersion": "operations-campaign-library.v1",
+  "provider": "coesite-operations",
+  "revision": "2026-10-11",
+  "campaigns": [
+    {
+      "id": "form-operating-cell",
+      "endeavorRole": "formation",
+      "parameters": [
+        "work_ref",
+        "principal",
+        "consumer",
+        "service_id",
+        "authorized_demand_ref",
+        "office_bundle",
+        "engineering_capabilities",
+        "acceptance_test"
+      ],
+      "stages": [
+        {
+          "id": "identity",
+          "ownerOffice": "corporate-secretary",
+          "effect": "bind service identity, principal, authority source and receiver"
+        },
+        {
+          "id": "configuration",
+          "ownerOffice": "configuration-manager",
+          "effect": "bind exact office/duty/skill/endeavor/campaign revision"
+        },
+        {
+          "id": "staffing",
+          "ownerOffice": "character-resources",
+          "effect": "open role vacancies and obtain qualification/capacity evidence"
+        },
+        {
+          "id": "readiness",
+          "ownerOffice": "task-dispatcher",
+          "effect": "hold until required provider capabilities and staffing are admitted"
+        },
+        {
+          "id": "pilot",
+          "ownerOffice": "pilot-department",
+          "effect": "run one bounded delivery without widening authority"
+        },
+        {
+          "id": "receive",
+          "ownerOffice": "quality-operations",
+          "effect": "independent receiver/assayer accepts, rejects or returns residue"
+        }
+      ],
+      "completion": "independent receiver acceptance plus current capacity/cadence plan",
+      "kill": "authorized demand withdrawn or no continuing consumer after pilot"
+    },
+    {
+      "id": "staff-operating-cell",
+      "endeavorRole": "staffing",
+      "parameters": [
+        "work_ref",
+        "principal",
+        "office",
+        "role",
+        "qualification",
+        "capacity_required",
+        "coordination_peer"
+      ],
+      "stages": [
+        {
+          "id": "vacancy",
+          "ownerOffice": "character-resources",
+          "effect": "record explicit vacancy; do not infer capacity"
+        },
+        {
+          "id": "supply",
+          "ownerOffice": "character-resources",
+          "service": "character-officer-supply",
+          "effect": "request qualified provider-neutral officer supply"
+        },
+        {
+          "id": "qualify",
+          "ownerOffice": "quality-operations",
+          "effect": "verify qualification evidence independently"
+        },
+        {
+          "id": "capacity",
+          "ownerOffice": "task-dispatcher",
+          "effect": "verify current provider capacity and conflicts"
+        },
+        {
+          "id": "assign",
+          "ownerOffice": "character-resources",
+          "effect": "receiver organization recognizes/induces selected worker under its authority"
+        },
+        {
+          "id": "handover",
+          "ownerOffice": "configuration-manager",
+          "effect": "bind source revision, duties, skills and continuity packet"
+        }
+      ],
+      "completion": "recognized office worker with current capacity and bounded assignment",
+      "kill": "vacancy withdrawn or role no longer carries live work"
+    },
+    {
+      "id": "operate-service-order",
+      "endeavorRole": "delivery",
+      "parameters": [
+        "work_ref",
+        "principal",
+        "consumer",
+        "service_id",
+        "intake",
+        "required_capabilities",
+        "assayer",
+        "acceptance_test"
+      ],
+      "stages": [
+        {
+          "id": "intake",
+          "ownerOffice": "task-dispatcher",
+          "effect": "admit exact work order and dependencies"
+        },
+        {
+          "id": "dispatch",
+          "ownerOffice": "task-dispatcher",
+          "effect": "release only to qualified available provider"
+        },
+        {
+          "id": "execute",
+          "ownerOffice": "configured-service-office",
+          "effect": "perform bounded service using admitted Engineering capabilities"
+        },
+        {
+          "id": "assay",
+          "ownerOffice": "quality-operations",
+          "effect": "independent check against exact acceptance test"
+        },
+        {
+          "id": "receive",
+          "ownerOffice": "consumer",
+          "effect": "independent receiver accepts or returns residue"
+        },
+        {
+          "id": "reconcile",
+          "ownerOffice": "corporate-secretary",
+          "effect": "preserve work/effect/receipt provenance and unresolved residue"
+        }
+      ],
+      "completion": "receiver-bound accepted effect; financial settlement remains separately governed",
+      "kill": "consumer withdraws or required authority/capability cannot lawfully be supplied"
+    }
+  ]
+}
