@@ -58,7 +58,8 @@
     "./scripts/requirements": "./scripts/requirements.mjs",
     "./primary-health": "./src/primary-health.mjs",
     "./requirement-types": "./src/requirement-types.mjs",
-    "./requirement-rules": "./src/requirement-rules.mjs"
+    "./requirement-rules": "./src/requirement-rules.mjs",
+    "./capacity-census-operation": "./src/capacity-census-operation.mjs"
   },
   "name": "@561-group/group-operations",
   "private": true,
