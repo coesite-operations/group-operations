@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { operation } from "@red-cup-engineering/computer-system-engine/rpc/operation";
 import { openingOf } from "@red-cup-engineering/organizing/enterprise";
 import { nodeJobReadings, nodeJobSchedulesOf, nodeJobsOf, runNodeJob } from "@red-cup-engineering/node-job-service";
+import { primaryHealthFindingsOperation } from "./primary-health-findings-operation.mjs";
 
 // The Group's deployments, as released with this module.
 const DEPLOYMENTS = process.env.METROPLAT_DEPLOYMENTS_ROOT ?? fileURLToPath(new URL("../../../deployments/", import.meta.url));
@@ -94,6 +95,7 @@ export function nodeJobSchedules({ deployment } = {}, { account, deployments = D
 /** The node's jobs: start one declared job's next run, and derive the job law's reports. */
 export function nodeJobOperations(binding, { home, deployments = DEPLOYMENTS } = {}) {
   return Object.freeze([
+    primaryHealthFindingsOperation(binding, { home }),
     operation({
       verb: "node-job-run", inputFormat: "json", outputFormat: "json",
       summary: "Start the next run of a job this node's deployment declares, from its running release.",
