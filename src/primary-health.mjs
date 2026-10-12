@@ -8,6 +8,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { fetchWithPolicy } from "@red-cup-engineering/http-services-section/fetch-policy";
 import { receiveRetainedReleaseOutcomes, separateReleaseOutcomeCustody } from "./retained-release-outcomes.mjs";
 
 /** The primary systems a pulse reads by default: the machines, then every public property. */
@@ -21,13 +22,16 @@ export const PRIMARY_HEALTH_TARGETS = Object.freeze([
     "crucible.561.group", "fearful.561.group", "solitaire.561.group", "stoke.561.group", "gambling-trainer.561.group",
     "you-are-conscious.561.group", "equivo.play.561.group", "north-shore-scenic-railroad-service.561.group",
     "l-space.561.group", "emsenn.net", "koios.news"]
-    .map((host) => ({ id: host, url: `https://${host}/`, kind: "property" })),
+    .map((host) => ({ id: host, url: `https://${host}/`, kind: "property",
+      ...(host === "l-space.561.group" ? { redirectOrigins: Object.freeze(["https://bare-cedar-fog.561.group"]) } : {}) })),
 ].map(Object.freeze));
 
 /** The charge a probe's answer tells. */
 export function chargeOf(answer) {
   if (answer === undefined) return "unknown";
   if (answer.status === undefined) return "denied";
+  // A redirect without its receiving destination does not establish availability.
+  if (answer.status >= 300 && answer.status < 400) return "unknown";
   if (answer.readiness?.state === "failed") return "denied";
   if (answer.status < 400 && answer.readiness?.state === "unknown") return "unknown";
   if (answer.status < 400) return "held";
@@ -94,10 +98,27 @@ function releaseEvidenceOf(system) {
   return { release: system.release, artifact: system.artifact, sources: system.sources, deployment };
 }
 
-/** Probe one target once: its status, its Retry-After, and, for a machine, what its health body reports. */
+/** Receive one declared target with a single timeout signal shared by all hops.
+ * Redirects stay in admitted origins. Injected transports must honor the signal.
+ */
 async function answerOf(target, { probe, timeoutMs }) {
   try {
-    const response = await probe(target.url, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers: { "cache-control": "no-cache", "user-agent": "561-group-primary-health-pulse" } });
+    const initial = new URL(target.url);
+    const origins = new Set([initial.origin, ...(target.redirectOrigins ?? [])]);
+    const response = await fetchWithPolicy(target.url, {
+      method: "GET", credentials: "omit", signal: AbortSignal.timeout(timeoutMs),
+      headers: { "cache-control": "no-cache", "user-agent": "561-group-primary-health-pulse" },
+    }, "primary-health", {
+      fetchImpl: probe, maxRedirects: target.kind === "machine" ? 0 : 5,
+      authorize(url, { redirect }) {
+        if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+          throw new TypeError("unadmitted-primary-health-url");
+        // The initial URL is the explicit probe binding (including the local
+        // machine health check). Redirects cannot broaden that binding.
+        if (redirect > 0 && (target.kind !== "property" || url.protocol !== "https:" || !origins.has(url.origin)))
+          throw new TypeError("unadmitted-primary-health-redirect");
+      },
+    });
     const answer = { status: response.status };
     const retryAfter = response.headers?.get?.("retry-after");
     if (retryAfter) answer.retryAfter = retryAfter;
@@ -216,3 +237,4 @@ export async function runPrimaryHealthPulse({ statusDirectory, journal, targets,
   await writeAtomically(join(statusDirectory, "index.html"), renderPrimaryHealthPage(status));
   return Object.freeze({ status, changes: Object.freeze(recorded), ...(releaseOutcomes === undefined ? {} : { releaseOutcomes }) });
 }
+

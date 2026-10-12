@@ -18,7 +18,7 @@ const response = (status, { body, retryAfter } = {}) => ({
 
 test("each answer tells one of the four charges", () => {
   assert.equal(chargeOf({ status: 200 }), "held");
-  assert.equal(chargeOf({ status: 308 }), "held");
+  assert.equal(chargeOf({ status: 308 }), "unknown");
   assert.equal(chargeOf({ status: 503, retryAfter: "120" }), "contested");
   assert.equal(chargeOf({ status: 503 }), "denied");
   assert.equal(chargeOf({ status: 502 }), "denied");
@@ -68,3 +68,4 @@ test("a pulse records each change as a told semantic record and writes the publi
   const laptopRecords = records.filter((row) => row.record.system === "bare-cedar-fog");
   assert.deepEqual(laptopRecords.map((row) => row.told), [{ for: false, against: true }, { for: true, against: false }]);
 });
+
