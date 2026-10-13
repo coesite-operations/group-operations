@@ -44,7 +44,10 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
   const hiveState = curationEarned.length > 0 ? "observed" : hiveCuration?.configured === true ? "configured-unobserved" : "unknown";
   const committed = economy?.crossings?.committed?.count ?? 0;
   const settled = economy?.crossings?.settled?.count ?? 0;
-  const x402ObservationCurrent = x402State === "current" || x402State === "current-empty";
+  // Recent legacy outcome claims or untyped settlement snapshots are not the
+  // qualified seller-payment observation required to conclude receiving is current.
+  const x402ObservationCurrent = x402Record?.type === "X402SellerPaymentObservation"
+    && (x402State === "current" || x402State === "current-empty");
   const unresolved = [
     ...(ledgerState === "unknown" ? [ledgerObservedAt === null ? "ledger economic observation date unavailable" : `ledger economic observation date is after the readout: ${ledgerObservedAt}`] : ledgerState === "stale" ? [`ledger economic evidence is stale since ${ledgerObservedAt}`] : []),
     ...(chainReconciliation === undefined || chainReconciliation.error !== undefined

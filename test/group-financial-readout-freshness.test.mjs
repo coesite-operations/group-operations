@@ -66,7 +66,8 @@ for (const type of ["X402SellerPaymentObservation", "X402SellerOutcomeObservatio
         assert.equal(x402.state, state);
         assert.equal(x402.freshness, "current");
         assert.equal(x402.sourceState, state);
-        assert.equal(readout.earningActions.find((item) => item.action === "observe-x402-settlements").state, state === "partially-corroborated" ? "run" : "continue");
+        assert.equal(readout.earningActions.find((item) => item.action === "observe-x402-settlements").state,
+          type === "X402SellerPaymentObservation" && state !== "partially-corroborated" ? "continue" : "run");
       }
     }
   });
@@ -87,7 +88,9 @@ for (const type of ["X402SellerPaymentObservation", "X402SellerOutcomeObservatio
 
 test("legacy settlement observations use the same date boundary without acquiring a seller claim", () => {
   for (const [observedAt, expected] of [[boundary, "current"], [stale, "stale"], [future, "unknown"], [undefined, "unknown"]]) {
-    const x402 = observation(compose({ x402Settlement: { value: { observedAt, settlementCount: 3 } } }), "x402-settlements");
+    const readout = compose({ x402Settlement: { value: { observedAt, settlementCount: 3 } } });
+    const x402 = observation(readout, "x402-settlements");
+    assert.equal(readout.earningActions.find((item) => item.action === "observe-x402-settlements").state, "run");
     assert.equal(x402.state, expected);
     assert.equal(x402.freshness, expected);
     assert.equal(x402.sourceState, null);
