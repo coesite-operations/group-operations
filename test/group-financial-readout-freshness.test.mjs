@@ -78,7 +78,7 @@ for (const type of ["X402SellerPaymentObservation", "X402SellerOutcomeObservatio
       assert.equal(x402.state, "unavailable");
       assert.equal(x402.sourceState, "unavailable");
       assert.equal(x402.freshness, freshness);
-      assert.ok(readout.unresolved.some((item) => item.includes("storage or chain corroboration was unavailable")));
+      assert.ok(readout.unresolved.some((item) => item.includes("qualified seller settlement evidence is unavailable")));
       assert.equal(readout.earningActions.find((item) => item.action === "observe-x402-settlements").state, "run");
       if (observedAt === stale) assert.ok(readout.unresolved.some((item) => item.includes("x402 settlement evidence is stale")));
     }

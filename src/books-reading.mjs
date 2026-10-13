@@ -4,9 +4,8 @@
 // number of other commodities each holds. The economy itself is read from the acceptance readout's
 // record, never folded from the board on a request path.
 import { existsSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
 import { gradedIsZero, gradedToDecimalString } from "@red-cup-engineering/exact-number-data-service/graded";
+export { latestRecordedEconomy } from "./acceptance-reading.mjs";
 
 /** The commodities the Group counts money in. */
 export const MONEY = Object.freeze(["USD", "USDC"]);
@@ -37,15 +36,4 @@ export async function entityBooksReadingOf({ books, readLedgerReport }) {
     accounts: booksSummaryOf(report),
     generatedAt: report.generatedAt ?? null,
   });
-}
-
-/** The economy the latest week-to-date acceptance readout recorded, or undefined when none has. */
-export async function latestRecordedEconomy(webData) {
-  const directory = join(webData, "records", "acceptance");
-  let names;
-  try { names = await readdir(directory); } catch { return undefined; }
-  const latest = names.filter((name) => name.endsWith("-to-date-acceptance-readout.json")).sort().at(-1);
-  if (latest === undefined) return undefined;
-  const readout = JSON.parse(await readFile(join(directory, latest), "utf8"));
-  return readout.economy === undefined ? undefined : Object.freeze({ ...readout.economy, week: readout.week, recordedAt: readout.asOf });
 }

@@ -1,18 +1,9 @@
 #!/usr/bin/env node
-import { writeSellerPaymentBooks } from "../src/seller-payment-books.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { corroborateMarketSellerSettlements, heldSellerSettlements, recordSellerSettlements } from "@red-cup-engineering/x402-services-section/seller-settlements";
-import { composeGroupFinancialReadout, writeGroupFinancialReadout } from "@561-group/group-operations/group-financial-readout";
-import { entityBooks } from "@red-cup-engineering/organizing/enterprise";
-import { outcomeJournal } from "@red-cup-engineering/organizing/enterprise";
-import { readLedgerReport } from "@red-cup-engineering/farolfi/ledger/reports";
-import { agencyAt } from "@red-cup-engineering/organizing/agency/held";
-import { GROUP_ENTITY, bookedSourcesOf, groupPartyOf, writeOutcomeBook } from "../src/acceptance.mjs";
-import { entityBooksReadingOf, latestRecordedEconomy } from "../src/books-reading.mjs";
-import { latestChainReconciliation } from "../src/reconciliation.mjs";
+import { composeGroupFinancialReadout, writeGroupFinancialReadout } from "../src/group-financial-readout.mjs";
+import { readReceivedEntityBooks, latestRecordedEconomy } from "../src/acceptance-reading.mjs";
 
 
 // Source defaults are available only through an explicitly configured source root.
@@ -59,54 +50,58 @@ export async function produceGroupFinancialReadout({ environment = process.env, 
   const hiveTimer = environment.HIVE_CURATION_TIMER_UNIT ?? defaults.hiveTimer;
   const agencyRoot = environment.METROPLAT_AGENCY_ROOT ?? defaults.agencyRoot;
   const walletRegistry = JSON.parse(await readFile(walletRegistryPath, "utf8"));
-  // Independently corroborated cash is read separately from the work-outcome journal.
-  // A payment cannot impersonate a buyer judgment or become customer demand.
-  let sellerBooking = null;
-  try {
-    const corroboration = await corroborateMarketSellerSettlements({ environment, now: () => new Date(asOf) });
-    // Each corroborated transfer is kept in the node's one log first; the cash books project
-    // what the log holds, so a partial provider read neither loses nor erases a transfer.
-    const dataRoot = requiredEnvironment("METROPLAT_DATA_ROOT", environment);
-    const kept = recordSellerSettlements(dataRoot, corroboration.settlements);
-    const books = await writeSellerPaymentBooks(dataRoot, corroboration, { booked: await bookedSourcesOf(ledgerPath), held: heldSellerSettlements(dataRoot) });
-    const { settlements, ...observed } = corroboration;
-    sellerBooking = { ...observed, type: "X402SellerPaymentObservation", kept: { corroborated: kept.kept, appended: kept.appended }, books, outcomeCount: 0,
-      customerAcceptance: "unobserved", revenueRecognized: false };
-
-  } catch (error) {
-    // Financial readout generation remains available when R2/chain infrastructure is down;
-    // the unresolved failure is surfaced and nothing is told.
-    sellerBooking = { type: "X402SellerPaymentObservation", state: "unavailable", observedAt: asOf, witnessCount: null, receiptVerifiedCount: null, confirmedCount: null, attributionRefusedCount: null, toldCount: null, alreadyToldCount: null, refusedCount: null, error: error instanceof Error ? error.message : String(error) };
-  }
+  // Qualified cash receiving has no retained observation binding in this producer.
+  // The market's facilitator witnesses are not independently verified transfers,
+  // and the removed heldSellerSettlements/recordSellerSettlements exports cannot
+  // be replaced by treating a readout request as a financial receiving job.
+  // Keep this unresolved until the actual cash receiver supplies its persisted
+  // observation and original cutoff through its owning contract. Do not invent
+  // a receipt file, refresh a prior report, or timestamp missing evidence now.
+  const sellerBooking = {
+    type: "X402SellerPaymentObservation", state: "unavailable", observedAt: null,
+    witnessCount: null, receiptVerifiedCount: null, confirmedCount: null,
+    attributionRefusedCount: null, refusedCount: null, outcomeCount: 0,
+    customerAcceptance: "unobserved", revenueRecognized: false,
+    error: "qualified seller-payment receiver observation is not bound to the financial readout",
+  };
   // The books against the chain: the latest reconciliation the chain-reconciliation job recorded
   // (reconcile-books-with-chain); reading the chain and the accounts' histories is that job's, never
   // this readout's.
-  const chainReconciliation = await latestChainReconciliation(join(requiredEnvironment("METROPLAT_WEB_DATA_DIR", environment), "records", "reconciliation"));
-  // Refresh the existing derived judgment book, including withdrawal of historical
-  // payment-as-acceptance projections. Keep the original journal and authored ledger.
-  // This reads actual judgments; it never records cash as a judgment.
-  let outcomeProjectionError;
-  if (environment.METROPLAT_DATA_ROOT) {
-    try {
-      const agency = agencyAt(requiredEnvironment("METROPLAT_AGENCY_ROOT", { METROPLAT_AGENCY_ROOT: agencyRoot }));
-      const partyOf = groupPartyOf({ enterprises: [...agency.enterprises.values()], walletRegistry });
-      await writeOutcomeBook(requiredEnvironment("METROPLAT_WEB_DATA_DIR", environment),
-        outcomeJournal(requiredEnvironment("METROPLAT_DATA_ROOT", environment)).read(), partyOf, { ledgerPath });
-    } catch (error) { outcomeProjectionError = error instanceof Error ? error.message : String(error); }
+  const webData = requiredEnvironment("METROPLAT_WEB_DATA_DIR", environment);
+  let chainReconciliation;
+  try {
+    const { latestChainReconciliation } = await import("../src/reconciliation.mjs");
+    chainReconciliation = await latestChainReconciliation(join(webData, "records", "reconciliation"));
+  } catch (error) {
+    chainReconciliation = { error: error instanceof Error ? error.message : String(error) };
   }
+  // produceAcceptanceReadout owns judgment receiving and the derived judgment
+  // book. This request reads its existing projection; it never refreshes it.
   // The CFO reads the books and the economy side by side: the entity's books consolidated (its
   // authored ledger and the books the node keeps for it), and the economy the latest acceptance
   // readout recorded from the board.
   let books;
   try {
+    const [{ entityBooks }, { readLedgerReport }, { agencyAt }, { GROUP_ENTITY, outcomeBookPathOf }, { entityBooksReadingOf }] = await Promise.all([
+      import("@red-cup-engineering/organizing/enterprise"),
+      import("@red-cup-engineering/farolfi/ledger/reports"),
+      import("@red-cup-engineering/organizing/agency/held"),
+      import("../src/acceptance.mjs"),
+      import("../src/books-reading.mjs"),
+    ]);
     const agency = agencyAt(requiredEnvironment("METROPLAT_AGENCY_ROOT", { METROPLAT_AGENCY_ROOT: agencyRoot }));
     const { members } = entityBooks(agency, GROUP_ENTITY, { environment, ...(environment.METROPLAT_REPOSITORY_ROOT ? { repositoryRoot: environment.METROPLAT_REPOSITORY_ROOT } : {}) });
-    books = outcomeProjectionError ? { error: `judgment book refresh failed: ${outcomeProjectionError}` }
-      : await entityBooksReadingOf({ books: [{ book: GROUP_ENTITY, path: ledgerPath }, ...members], readLedgerReport });
+    books = await readReceivedEntityBooks({ webData, bookPath: outcomeBookPathOf(webData), asOf,
+      read: () => entityBooksReadingOf({ books: [{ book: GROUP_ENTITY, path: ledgerPath }, ...members], readLedgerReport }) });
   } catch (error) {
     books = { error: error instanceof Error ? error.message : String(error) };
   }
-  const economy = await latestRecordedEconomy(requiredEnvironment("METROPLAT_WEB_DATA_DIR", environment));
+  let economy;
+  try {
+    economy = await latestRecordedEconomy(webData, { asOf });
+  } catch (error) {
+    economy = { error: error instanceof Error ? error.message : String(error) };
+  }
   const readout = composeGroupFinancialReadout({
     asOf,
     ledgerObservation: observeLedger(ledgerPath),
@@ -117,7 +112,7 @@ export async function produceGroupFinancialReadout({ environment = process.env, 
     books,
     economy,
   });
-  const path = await writeGroupFinancialReadout(requiredEnvironment("METROPLAT_WEB_DATA_DIR", environment), readout);
+  const path = await writeGroupFinancialReadout(webData, readout);
   return Object.freeze({ path, readout });
 }
 
