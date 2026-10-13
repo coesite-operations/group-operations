@@ -69,5 +69,8 @@
   "version": "0.1.0",
   "devDependencies": {
     "@red-cup-engineering/gaming": "workspace:*"
+  },
+  "scripts": {
+    "test:node-jobs": "node --test --test-isolation=none test/node-job-instance.test.mjs test/node-job-binding.test.mjs test/node-job-operation.test.mjs test/node-job-execution.test.mjs"
   }
 }
