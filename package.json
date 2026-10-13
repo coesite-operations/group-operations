@@ -7,6 +7,7 @@
   "dependencies": {
     "@red-cup-engineering/activitypub-services-section": "workspace:*",
     "@red-cup-engineering/alpaca-principal-actuation-service": "workspace:*",
+    "@red-cup-engineering/cloudflare-services-section": "workspace:*",
     "@red-cup-engineering/computer-code-development-engine": "workspace:*",
     "@red-cup-engineering/computer-inference-engine": "workspace:*",
     "@red-cup-engineering/computer-system-engine": "workspace:*",

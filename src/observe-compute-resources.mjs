@@ -1,20 +1,14 @@
 // Observe the provider accounts configured on the author node.
 // Only identifiers and observations are returned; credential values never enter the record.
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const execFileAsync = promisify(execFile);
 import { readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join } from "node:path";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const root = (() => {
-  let dir = here;
-  while (dir !== dirname(dir)) {
-    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return dir;
-    dir = dirname(dir);
-  }
-  throw new Error("repository root unavailable");
-})();
-const cloudflareModule = join(root, "lib/emsenn/services/561-group/services/engineering-services-section/services/computer-engineering-services-section/services/computer-systems-engineering-services-section/services/computer-web-engineering-services-section/services/web-platform-services-section/services/cloud-services-section/services/cloudflare-services-section/scripts/derive-cloudflare-account-inventory.mjs");
+// This is a standalone Coesite package. The owning Cloudflare Engineering
+// package exports the provider reader; an old monorepo-relative source path
+// is neither a released dependency nor a valid installation contract.
 
 // A CLI is found on PATH, else in the XDG user executable directory ($HOME/.local/bin), which a
 // user service manager's PATH does not carry: where the node runs must not decide what it observes.
@@ -23,14 +17,25 @@ function executable(name) {
   return dirs.map((dir) => join(dir, name)).find((path) => existsSync(path)) ?? name;
 }
 
-function command(bin, args) {
-  const result = spawnSync(executable(bin), args, { encoding: "utf8", timeout: 45_000, env: { ...process.env, CLOUDSDK_CORE_DISABLE_PROMPTS: "1" } });
-  if (result.status !== 0 || result.error) return { status: "unavailable", reason: result.error?.code ?? `exit-${result.status}` };
-  return { status: "observed", text: result.stdout.trim() };
+async function command(bin, args) {
+  // Provider probes may wait on network or CLI credential access. Never block
+  // the author's HTTP/ActivityPub event loop with spawnSync.
+  try {
+    const { stdout } = await execFileAsync(executable(bin), args, {
+      encoding: "utf8", timeout: 45_000, maxBuffer: 4 * 1024 * 1024,
+      env: { ...process.env, CLOUDSDK_CORE_DISABLE_PROMPTS: "1" },
+    });
+    return { status: "observed", text: stdout.trim() };
+  } catch (error) {
+    // stderr often contains provider account material; retain only error class.
+    const reason = error?.code === "ENOENT" ? "executable-unavailable"
+      : error?.killed ? "provider-timeout" : "provider-command-failed";
+    return { status: "unavailable", reason };
+  }
 }
 
-function jsonCommand(bin, args) {
-  const result = command(bin, args);
+async function jsonCommand(bin, args) {
+  const result = await command(bin, args);
   if (result.status !== "observed") return result;
   if (result.text === "") return { status: "observed", value: [] }; // OCI emits no body for empty lists.
   try { return { status: "observed", value: JSON.parse(result.text) }; }
@@ -44,7 +49,7 @@ function value(reading, fallback = []) { return reading.status === "observed" ? 
 function ociProfiles(configPath) {
   if (!existsSync(configPath)) return [];
   const names = [...readFileSync(configPath, "utf8").matchAll(/^\[([^\]]+)\]/gmu)].map((match) => match[1]);
-  return names.filter((name) => name !== "DEFAULT");
+  return names;
 }
 
 function ociField(configPath, profile, key) {
@@ -56,20 +61,21 @@ function ociField(configPath, profile, key) {
 
 export async function observeComputeResources() {
   const observedAt = new Date().toISOString();
-  const googleAccounts = gcloud(["auth", "list"]);
-  const projectsReading = gcloud(["projects", "list"]);
-  const projects = value(projectsReading).map((project) => {
+  const googleAccounts = await gcloud(["auth", "list"]);
+  const projectsReading = await gcloud(["projects", "list"]);
+  const projects = [];
+  for (const project of value(projectsReading)) {
     const id = project.projectId;
-    const billing = gcloud(["billing", "projects", "describe", id]);
-    const services = gcloud(["services", "list", "--enabled", `--project=${id}`]);
+    const billing = await gcloud(["billing", "projects", "describe", id]);
+    const services = await gcloud(["services", "list", "--enabled", `--project=${id}`]);
     const enabled = value(services).map((entry) => entry.config?.name).filter(Boolean);
     const run = enabled.includes("run.googleapis.com")
-      ? gcloud(["run", "services", "list", `--project=${id}`, "--platform=managed", "--region=us-central1"])
+      ? await gcloud(["run", "services", "list", `--project=${id}`, "--platform=managed", "--region=us-central1"])
       : { status: "not-enabled" };
     const compute = enabled.includes("compute.googleapis.com") && billing.value?.billingEnabled !== false
-      ? gcloud(["compute", "instances", "list", `--project=${id}`])
+      ? await gcloud(["compute", "instances", "list", `--project=${id}`])
       : { status: "not-enabled" };
-    return {
+    projects.push({
       projectId: id, name: project.name, lifecycle: project.lifecycleState,
       billing: billing.status === "observed" ? { status: "observed", enabled: billing.value.billingEnabled === true } : billing,
       enabledComputeServices: enabled.filter((name) => /^(compute|run|cloudfunctions|cloudbuild|storage|artifactregistry)\.googleapis\.com$/u.test(name)),
@@ -83,23 +89,23 @@ export async function observeComputeResources() {
       computeInstances: billing.value?.billingEnabled === false
         ? { status: "unavailable", reason: "billing-disabled; Compute Engine list cannot establish an empty inventory" }
         : compute.status === "observed" ? { status: "observed", instances: value(compute).map((instance) => ({ name: instance.name, zone: instance.zone?.split("/").at(-1), status: instance.status, machineType: instance.machineType?.split("/").at(-1) })) } : compute,
-    };
-  });
+    });
+  }
 
   const ociConfig = join(process.env.HOME ?? "", ".oci/config");
   const profiles = ociProfiles(ociConfig);
-  const profile = profiles.find((name) => name.endsWith("_API_KEY")) ?? profiles[0];
+  const profile = profiles.find((name) => name.endsWith("_API_KEY")) ?? (profiles.includes("DEFAULT") ? "DEFAULT" : profiles[0]);
   let oracle = { status: "credential-unavailable", profiles };
   if (profile) {
     const tenancy = ociField(ociConfig, profile, "tenancy");
     const region = ociField(ociConfig, profile, "region");
-    const tenancyReading = tenancy ? oci(profile, ["iam", "tenancy", "get", "--tenancy-id", tenancy]) : { status: "unavailable", reason: "tenancy-not-configured" };
-    const regions = tenancy ? oci(profile, ["iam", "region-subscription", "list", "--tenancy-id", tenancy]) : { status: "unavailable", reason: "tenancy-not-configured" };
-    const compartments = tenancy ? oci(profile, ["iam", "compartment", "list", "--compartment-id", tenancy, "--compartment-id-in-subtree", "true", "--all"]) : { status: "unavailable", reason: "tenancy-not-configured" };
+    const tenancyReading = tenancy ? await oci(profile, ["iam", "tenancy", "get", "--tenancy-id", tenancy]) : { status: "unavailable", reason: "tenancy-not-configured" };
+    const regions = tenancy ? await oci(profile, ["iam", "region-subscription", "list", "--tenancy-id", tenancy]) : { status: "unavailable", reason: "tenancy-not-configured" };
+    const compartments = tenancy ? await oci(profile, ["iam", "compartment", "list", "--compartment-id", tenancy, "--compartment-id-in-subtree", "true", "--all"]) : { status: "unavailable", reason: "tenancy-not-configured" };
     const compartmentIds = [tenancy, ...(compartments.value?.data ?? []).map((item) => item.id)].filter(Boolean);
     const instances = [];
     for (const id of compartmentIds) {
-      const reading = oci(profile, ["compute", "instance", "list", "--compartment-id", id, "--all"]);
+      const reading = await oci(profile, ["compute", "instance", "list", "--compartment-id", id, "--all"]);
       instances.push({ compartmentId: id, status: reading.status, ...(reading.status === "observed" ? { items: (reading.value.data ?? reading.value).map((item) => ({ name: item["display-name"], state: item["lifecycle-state"], shape: item.shape, availabilityDomain: item["availability-domain"] })) } : { reason: reading.reason }) });
     }
     oracle = { status: tenancyReading.status, tenancyName: tenancyReading.value?.data?.name, configuredRegion: region, profiles, subscribedRegions: (regions.value?.data ?? []).map((item) => item["region-name"]), compartments: (compartments.value?.data ?? []).map((item) => ({ name: item.name, id: item.id })), instances };
@@ -108,10 +114,23 @@ export async function observeComputeResources() {
   let cloudflare = { status: "credential-unavailable" };
   if (process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) {
     try {
-      const { deriveCloudflareAccountInventory } = await import(pathToFileURL(cloudflareModule).href);
-      const reading = await deriveCloudflareAccountInventory({ accountId: process.env.CLOUDFLARE_ACCOUNT_ID, tokenEnvironmentVariable: "CLOUDFLARE_API_TOKEN" });
+      const provider = await import("@red-cup-engineering/cloudflare-services-section/derive-cloudflare-account-inventory");
+      const reading = await provider.deriveCloudflareAccountInventory({ accountId: process.env.CLOUDFLARE_ACCOUNT_ID, tokenEnvironmentVariable: "CLOUDFLARE_API_TOKEN" });
+      // Workers Builds native limits require separate Workers CI Read scope.
+      // A route inventory token can be valid even if this capability is denied.
+      let workersBuildMinutes = { status: "unavailable", reason: "reader-not-admitted" };
+      if (typeof provider.observeCloudflareBuildMinutes === "function") {
+        try {
+          const allowance = await provider.observeCloudflareBuildMinutes({
+            accountId: process.env.CLOUDFLARE_ACCOUNT_ID, tokenEnvironmentVariable: "CLOUDFLARE_API_TOKEN",
+          });
+          workersBuildMinutes = allowance.type === "CloudflareWorkersBuildMinutesObservation"
+            ? { status: allowance.status, observedAt: allowance.observedAt, refreshAt: allowance.refreshAt }
+            : { status: "unavailable", reason: allowance.code ?? "unknown-refusal" };
+        } catch { workersBuildMinutes = { status: "unavailable", reason: "native-build-observation-failed" }; }
+      }
       cloudflare = reading.type === "CloudflareAccountInventory" ? {
-        status: "observed", accountId: reading.accountId, counts: reading.counts,
+        status: "observed", accountId: reading.accountId, counts: reading.counts, workersBuildMinutes,
         zones: reading.zones.map((zone) => ({ name: zone.name, status: zone.status,
           destinations: zone.records.filter((record) => ["A", "AAAA", "CNAME"].includes(record.type)).map((record) => ({ type: record.type, name: record.name, content: record.content, proxied: record.proxied })) })),
         workers: reading.workers.map((worker) => ({ name: worker.id, modifiedOn: worker.modifiedOn })),
@@ -122,7 +141,7 @@ export async function observeComputeResources() {
     }
   }
 
-  const ssh = command("ssh", ["-G", "cold-red-gate"]);
+  const ssh = await command("ssh", ["-G", "cold-red-gate"]);
   const hostname = ssh.status === "observed" ? ssh.text.match(/^hostname (.+)$/mu)?.[1] : undefined;
   return {
     kind: "compute-resource-observation", observedAt,
