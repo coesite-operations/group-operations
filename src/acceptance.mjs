@@ -10,6 +10,7 @@ import {
 } from "@red-cup-engineering/organizing/enterprise";
 import { personasRootOf, readReachRecords, reachReadoutOf } from "./reach-readout.mjs";
 import { pricingRootOf } from "@red-cup-engineering/computer-inference-engine/dispatch/expected-resolution-pricing-client";
+import { bookSha256Of } from "./acceptance-reading.mjs";
 
 /** The legal entity the Group's own wallets and seated enterprises sign for. */
 export const GROUP_ENTITY = "561-group-llc";
@@ -226,9 +227,15 @@ export async function bookedSourcesOf(ledgerPath) {
  * Rewrite the Group's derived book whole from the outcomes, leaving to the authored ledger
  * (`ledgerPath`) every delivery it already books.
  */
-export async function writeOutcomeBook(webDataDir, outcomes, partyOf, { ledgerPath } = {}) {
+async function writeReceivedOutcomeBook(webDataDir, outcomes, partyOf, { ledgerPath } = {}) {
   const booked = await bookedSourcesOf(ledgerPath);
-  return atomicWrite(outcomeBookPathOf(webDataDir), outcomeBookText(outcomes, { partyOf, booked, title: "561 Group LLC's book of judged deliveries" }));
+  const body = outcomeBookText(outcomes, { partyOf, booked, title: "561 Group LLC's book of judged deliveries" });
+  const path = await atomicWrite(outcomeBookPathOf(webDataDir), body);
+  return Object.freeze({ path, bookSha256: bookSha256Of(body) });
+}
+
+export async function writeOutcomeBook(webDataDir, outcomes, partyOf, options = {}) {
+  return (await writeReceivedOutcomeBook(webDataDir, outcomes, partyOf, options)).path;
 }
 
 /**
@@ -270,7 +277,7 @@ export async function produceAcceptanceReadout({ environment = process.env, now 
   const economy = economySummaryOf(economyOf(board, { at: asOf, territories }));
   const outcomes = journal.read();
   const partyOf = groupPartyOf({ enterprises, walletRegistry });
-  const bookPath = await writeOutcomeBook(webData, outcomes, partyOf, { ledgerPath: environment.METROPLAT_LEDGER_JOURNAL });
+  const { path: bookPath, bookSha256 } = await writeReceivedOutcomeBook(webData, outcomes, partyOf, { ledgerPath: environment.METROPLAT_LEDGER_JOURNAL });
   // Staffing reads the journal folded once here, never the journal itself: received work is left
   // out, since the work queue already counts it.
   const standingPath = await atomicWrite(outcomeStandingIndexOf({ environment: { METROPLAT_WEB_DATA_DIR: webData } }), `${JSON.stringify(standingIndexOf(
@@ -290,6 +297,7 @@ export async function produceAcceptanceReadout({ environment = process.env, now 
     // Each face's reach, from the dated readings the personas' turns append to their records alone.
     reach: reachReadoutOf(text(personasRootOf(environment)) ? readReachRecords(personasRootOf(environment)) : [], { from: week.from, to }),
     book: bookPath,
+    bookSha256,
     standing: standingPath,
     marketJudgments: marketPath,
     judgedSettlements: settlementsPath,

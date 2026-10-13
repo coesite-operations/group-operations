@@ -59,16 +59,18 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
           ...(unreadable.length === 0 ? [] : [`${unreadable.length} chain balance(s) at ${chainReconciliation.cutoff} name accounts the books cannot read`]),
         ];
       })()),
-    ...(economy === undefined ? ["the economy the board carries has not been read: no acceptance readout is recorded"]
+    ...(economy === undefined || economy.error !== undefined ? [`the economy the board carries has not been read: ${economy?.error ?? "no acceptance readout is recorded"}`]
       : settled === 0 && committed > 0 ? [`${committed} crossings between members are committed and none has settled, so no member's work has cleared on a credit line`] : []),
+    ...(economy?.receiving?.state === "stale" ? [`economy receiver evidence is stale since ${economy.receiving.observedAt}`] : []),
     ...(books === undefined || books.error !== undefined ? [`the entity's consolidated books were not read${books?.error ? `: ${books.error}` : ""}`] : []),
+    ...(books?.judgmentBookReceiving?.state === "stale" ? [`judgment book receiver evidence is stale since ${books.judgmentBookReceiving.observedAt}`] : []),
     ...(chainReconciliation?.failed > 0 ? [`${chainReconciliation.failed} custody wallet reading(s) failed, so the balances they share were not asserted`] : []),
     ...(walletState === "unknown" ? [walletObservedAt === null ? "wallet registry observation date unavailable" : `wallet registry observation date is after the readout: ${walletObservedAt}`] : walletState === "stale" ? [`wallet registry is stale since ${walletObservedAt}`] : []),
     ...(x402Freshness === "unknown" ? [x402ObservedAt === null ? "x402 settlement evidence unavailable" : `x402 settlement observation date is after the readout: ${x402ObservedAt}`]
       : x402Freshness === "stale" ? [`x402 settlement evidence is stale since ${x402ObservedAt}`]
         : x402State === "unknown" ? ["x402 settlement evidence unavailable"] : []),
-    ...(isSellerBooking && x402State === "unavailable" ? ["seller settlement storage or chain corroboration was unavailable; previous cash evidence is held"] : []),
-    ...(isSellerBooking && typeof x402Record.error === "string" ? [`seller settlement corroboration failed: ${x402Record.error}`] : []),
+    ...(isSellerBooking && x402State === "unavailable" ? ["qualified seller settlement evidence is unavailable; this readout does not perform receiving"] : []),
+    ...(isSellerBooking && typeof x402Record.error === "string" ? [`seller settlement evidence unavailable: ${x402Record.error}`] : []),
     ...(isSellerBooking && x402Record.attributionRefusedCount > 0 ? [`${x402Record.attributionRefusedCount} seller transfer(s) were corroborated on-chain but lack qualified transaction-time seller or tariff attribution, so cash remains unattributed and is never assigned from today's catalogue`] : []),
     ...(isSellerBooking && x402Record.refusedCount > 0 && !(x402Record.attributionRefusedCount > 0) ? [`${x402Record.refusedCount} seller settlement record(s) were refused; only independently corroborated cash is available for book projection`] : []),
     ...(isSellerBooking && x402Record.border?.self?.count > 0 ? [`${x402Record.border.self.count} corroborated payment(s) came from the Group's own wallets (${moneyText(x402Record.border.self.value)}): the Group paying itself, never a sale`] : []),
@@ -83,7 +85,7 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
     version: 2,
     title: "561 Group daily financial readout",
     asOf,
-    recognitionBasis: "The authored ledger and judged-delivery book retain their own recognition bases; legacy entries are not requalified by this readout. Corroborated x402 transfers remain cash claims pending performance and qualified receiving; a payment does not establish delivery, customer acceptance or a sale. Configured earning mechanisms remain opportunities until independently observed.",
+    recognitionBasis: "The authored ledger and every member book retain their own recognition bases; this readout does not requalify legacy entries or establish current x402 cash corroboration. Judgment-book receiving qualifies only that projection. Corroborated x402 transfers remain cash claims pending performance and qualified receiving; a payment does not establish delivery, customer acceptance or a sale. Configured earning mechanisms remain opportunities until independently observed.",
     ledger: Object.freeze({
       kind: ledgerObservation.kind,
       state: ledgerState,
@@ -112,8 +114,8 @@ export function composeGroupFinancialReadout({ asOf, ledgerObservation, walletRe
         transactionCount: Number.isInteger(x402Record?.transactionCount) ? x402Record.transactionCount : null }),
       Object.freeze({ kind: "hive-curation", state: hiveState, source: hiveCuration?.unitPath ?? null,
         scheduleConfigured: typeof hiveCuration?.configured === "boolean" ? hiveCuration.configured : null, earned: Object.freeze(curationEarned) }),
-      Object.freeze({ kind: "entity-books", state: books === undefined ? "unobserved" : books.error !== undefined ? "unavailable" : "observed", ...(books ?? {}) }),
-      Object.freeze({ kind: "economy", state: economy === undefined ? "unobserved" : "observed", ...(economy ?? {}) }),
+      Object.freeze({ kind: "entity-books", state: books === undefined ? "unobserved" : books.error !== undefined ? "unavailable" : books.judgmentBookReceiving?.state === "stale" ? "stale" : "observed", ...(books ?? {}) }),
+      Object.freeze({ ...(economy ?? {}), sourceKind: economy?.kind ?? null, kind: "economy", state: economy === undefined ? "unobserved" : economy.error !== undefined ? "unavailable" : economy.receiving?.state === "stale" ? "stale" : "observed" }),
       Object.freeze({ kind: "chain-reconciliation", state: chainReconciliation === undefined ? "unobserved" : chainReconciliation.error !== undefined ? "unavailable" : (chainReconciliation.rows ?? []).every((row) => row.state === "agrees") ? "agrees" : "differs",
         cutoff: chainReconciliation?.cutoff ?? null, proposal: chainReconciliation?.proposalPath ?? null, movementBook: chainReconciliation?.movementBook ?? null, rows: chainReconciliation?.rows ?? [], ...(chainReconciliation?.error ? { error: chainReconciliation.error } : {}) }),
     ]),
