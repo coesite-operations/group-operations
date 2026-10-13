@@ -1,4 +1,5 @@
 import {readFinancialFleetEvidence} from './financial-fleet-evidence.mjs';
+import {kalshiFleetReceiptOf} from './kalshi-fleet-receipt.mjs';
 import {reconcileDeskOrderEffects} from '@red-cup-engineering/kalshi-services-section/desk-order-recovery';
 import {persistBaseFleetRecord,readBaseFleetRecord,readBaseFleetRecordWindow} from './base-record-store.mjs';
 import {discoverObservedBaseTokens} from './base-observed-tokens.mjs';
@@ -108,7 +109,15 @@ export function tradingFleetNetworkSources({environment,config}){
      try{const response=await client.getMarket(settlement.ticker);settlementAccounting.records.push(reconcileSettlementPayout({settlement,market:response.market??response,observedAt:new Date().toISOString()}));}
      catch(error){settlementAccounting.refusals.push({ticker:settlement.ticker,reason:error.message});}
     }
-    value=await persist('kalshi',{type:'KalshiFleetAccountObservation',observedAt,balance,positions,orders,fills,settlements,settlementAccounting,mandatePolicyReadiness:readDeskAuthority({root:environment.KALSHI_DESK_AUTHORITY_ROOT??environment.METROPLAT_AUTHORITY_ROOT??environment.METROPLAT_REPOSITORY_ROOT,at:new Date().toISOString()}),orderEffect:false});
+    // Retain EVERY account row and source-time witness before projecting an RPC response.
+     // The full account object can exceed MetroPlat's 1 MiB canonical carrier;
+     // only this bounded receipt crosses the tool/ActivityPub boundary.
+     const retained=await persist('kalshi',{type:'KalshiFleetAccountObservation',
+      observedAt:new Date().toISOString(),collectionStartedAt:observedAt,
+      balance,positions,orders,fills,settlements,settlementAccounting,
+      mandatePolicyReadiness:readDeskAuthority({root:environment.KALSHI_DESK_AUTHORITY_ROOT??environment.METROPLAT_AUTHORITY_ROOT??environment.METROPLAT_REPOSITORY_ROOT,at:new Date().toISOString()}),
+      orderEffect:false});
+     value=kalshiFleetReceiptOf(retained);
    }
    return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value}};
   }catch(error){return {jsonrpc:'2.0',id,result:{isError:true,content:[{type:'text',text:error instanceof Error?error.message:String(error)}]}};}
