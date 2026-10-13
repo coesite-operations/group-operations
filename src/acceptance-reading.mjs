@@ -15,7 +15,7 @@ export async function latestRecordedAcceptance(webData) {
   for (const name of names.filter((entry) => entry.endsWith("-acceptance-readout.json"))) {
     const path = join(directory, name);
     const readout = JSON.parse(await readFile(path, "utf8"));
-    if (!Number.isFinite(Date.parse(readout.asOf))) throw new Error("acceptance receiver cutoff is invalid");
+    if (typeof readout.asOf !== "string" || !Number.isFinite(Date.parse(readout.asOf))) throw new Error("acceptance receiver cutoff is invalid");
     receipts.push({ path, readout });
   }
   receipts.sort((a, b) => Date.parse(a.readout.asOf) - Date.parse(b.readout.asOf) || a.path.localeCompare(b.path));
@@ -29,7 +29,7 @@ function qualifyAcceptanceReceiving(received, asOf) {
     throw new Error("no x402-excluding acceptance receiver receipt");
   }
   const observed = Date.parse(readout.asOf), cutoff = Date.parse(asOf);
-  if (!Number.isFinite(observed) || !Number.isFinite(cutoff) || observed > cutoff) {
+  if (typeof readout.asOf !== "string" || typeof asOf !== "string" || !Number.isFinite(observed) || !Number.isFinite(cutoff) || observed > cutoff) {
     throw new Error("acceptance receiver cutoff is missing, invalid or after the financial readout");
   }
   return Object.freeze({ source: received.path, observedAt: readout.asOf,

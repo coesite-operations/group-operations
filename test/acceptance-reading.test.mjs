@@ -81,7 +81,7 @@ test("old evidence stays stale at its original cutoff; missing, malformed and fu
   const f = await fixture(t);
   assert.equal((await judgmentBookReceivingOf({ ...f, asOf: "2026-10-14T12:00:00.000Z" })).state, "current");
   assert.equal((await judgmentBookReceivingOf({ ...f, asOf: "2026-10-14T12:00:00.001Z" })).state, "stale");
-  for (const asOf of [undefined, "bad-date", "2026-10-14T12:00:00.000Z"]) {
+  for (const asOf of [undefined, 0, "bad-date", "2026-10-14T12:00:00.000Z"]) {
     await writeFile(f.receiptPath, JSON.stringify({ ...f.receipt, asOf }));
     await assert.rejects(judgmentBookReceivingOf(f), /cutoff/u);
   }
