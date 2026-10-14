@@ -29,6 +29,7 @@ import { cell } from "@red-cup-engineering/signcell/cell";
 import { chargeOfTold, createSemanticRecordJournal } from "@red-cup-engineering/semiotic-eavt-services-section/record-semantic-record";
 import { openingOf } from "@red-cup-engineering/organizing/enterprise";
 import { contributionsOf } from "./requirement-orders.mjs";
+import { metWhenSatisfied } from "./requirement-satisfaction.mjs";
 import { readPools } from "./requirement-pools.mjs";
 import { CATEGORY, READING, REQUIREMENT, RULING, admitSigned, readGoverning, registerSeatKey, seatKey, signed } from "./requirement-cells.mjs";
 
@@ -65,19 +66,6 @@ export function exercise(check, { cwd, timeoutMs = CHECK_TIMEOUT_MS, env = { ...
 export function joined(readings) {
   const told = { for: readings.flatMap((reading) => reading.told.for), against: readings.flatMap((reading) => reading.told.against) };
   return Object.freeze({ told, charge: chargeOfTold({ for: told.for.length > 0, against: told.against.length > 0 }) });
-}
-
-/** Epistemic FOUR support is not conjunctive completion: every independent
- * behavioral condition must have been executed and held, without contrary or
- * unknown evidence, and the original demand must itself be corroborated.
- * The FOUR charge remains unchanged for sign/journal reasoning.
- */
-export function metWhenSatisfied(conditions, requirementCharge) {
-  if (!Array.isArray(conditions)) throw new TypeError("requirement conditions must be a list");
-  return requirementCharge === "held" && conditions.length > 0 && conditions.every((condition) =>
-    condition?.exercises === "behavior" && condition.charge === "held" &&
-    Array.isArray(condition.told?.for) && condition.told.for.length > 0 &&
-    Array.isArray(condition.told?.against) && condition.told.against.length === 0);
 }
 
 /** Read one requirement: run its checks and record the reading as a signed cell. */
