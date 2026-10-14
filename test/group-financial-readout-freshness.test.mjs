@@ -121,3 +121,20 @@ test("Hive reward observations and schedule availability stay separate", () => {
     }
   }
 });
+
+test("current qualified cash receiving is visible as cash evidence without booking a sale", () => {
+  const input = settlement("X402SellerPaymentObservation", "current", current);
+  const before = structuredClone(input);
+  const readout = compose({ x402Settlement: {
+    ...input, path: "ni:///sha-256;qualified-cash-observation",
+  } });
+  const cash = observation(readout, "x402-settlements");
+  assert.equal(cash.state, "current");
+  assert.equal(cash.receiptVerifiedCount, 1);
+  assert.equal(cash.confirmedCount, 1);
+  assert.equal(cash.customerAcceptance, "unobserved");
+  assert.equal(cash.revenueRecognized, false);
+  assert.equal(cash.outcomeCount, 0);
+  assert.equal(readout.earningActions.find((item) => item.action === "observe-x402-settlements").state, "continue");
+  assert.deepEqual(input, before);
+});

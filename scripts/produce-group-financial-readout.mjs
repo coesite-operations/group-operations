@@ -50,13 +50,10 @@ export async function produceGroupFinancialReadout({ environment = process.env, 
   const hiveTimer = environment.HIVE_CURATION_TIMER_UNIT ?? defaults.hiveTimer;
   const agencyRoot = environment.METROPLAT_AGENCY_ROOT ?? defaults.agencyRoot;
   const walletRegistry = JSON.parse(await readFile(walletRegistryPath, "utf8"));
-  // Qualified cash receiving has no retained observation binding in this producer.
-  // The market's facilitator witnesses are not independently verified transfers,
-  // and the removed heldSellerSettlements/recordSellerSettlements exports cannot
-  // be replaced by treating a readout request as a financial receiving job.
-  // Keep this unresolved until the actual cash receiver supplies its persisted
-  // observation and original cutoff through its owning contract. Do not invent
-  // a receipt file, refresh a prior report, or timestamp missing evidence now.
+  // The readout consumes only the existing native semantic journal's retained,
+  // qualified seller observations. Corroborating chain transfers is a separate
+  // receiving job; never call a facilitator, rewrite cash books, or stamp missing
+  // settlement evidence with the readout's current time.
   const sellerBooking = {
     type: "X402SellerPaymentObservation", state: "unavailable", observedAt: null,
     witnessCount: null, receiptVerifiedCount: null, confirmedCount: null,
@@ -64,6 +61,18 @@ export async function produceGroupFinancialReadout({ environment = process.env, 
     customerAcceptance: "unobserved", revenueRecognized: false,
     error: "qualified seller-payment receiver observation is not bound to the financial readout",
   };
+  let x402Settlement = { path: null, value: sellerBooking };
+  if (typeof environment.METROPLAT_DATA_ROOT === "string" && environment.METROPLAT_DATA_ROOT.trim() !== "") {
+    try {
+      const { latestQualifiedSellerPaymentObservation } = await import("../src/seller-payment-books.mjs");
+      const received = latestQualifiedSellerPaymentObservation(environment.METROPLAT_DATA_ROOT, { asOf });
+      if (received !== undefined) x402Settlement = received;
+    } catch (error) {
+      x402Settlement = { path: null, value: {
+        ...sellerBooking, error: `qualified seller payment receiving unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      } };
+    }
+  }
   // The books against the chain: the latest reconciliation the chain-reconciliation job recorded
   // (reconcile-books-with-chain); reading the chain and the accounts' histories is that job's, never
   // this readout's.
@@ -106,7 +115,7 @@ export async function produceGroupFinancialReadout({ environment = process.env, 
     asOf,
     ledgerObservation: observeLedger(ledgerPath),
     walletRegistry,
-    x402Settlement: { path: null, value: sellerBooking },
+    x402Settlement,
     hiveCuration: { configured: typeof hiveTimer === "string" && existsSync(hiveTimer), unitPath: hiveTimer ?? null },
     chainReconciliation,
     books,

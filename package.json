@@ -2,6 +2,7 @@
   "bin": {
     "group-produce-financial-readout": "scripts/produce-group-financial-readout.mjs",
     "group-reconcile-books-with-chain": "scripts/reconcile-books-with-chain.mjs",
+    "group-receive-x402-seller-payments": "scripts/receive-x402-seller-payments.mjs",
     "group-requirements": "scripts/requirements.mjs"
   },
   "dependencies": {
@@ -45,6 +46,7 @@
     "./group-financial-readout-view": "./src/group-financial-readout-view.mjs",
     "./network": "./src/network.mjs",
     "./scripts/produce-group-financial-readout": "./scripts/produce-group-financial-readout.mjs",
+    "./scripts/receive-x402-seller-payments": "./scripts/receive-x402-seller-payments.mjs",
     "./group-financial-readout-operation": "./src/group-financial-readout-operation.mjs",
     "./group-enterprise-operations": "./src/group-enterprise-operations.mjs",
     "./group-business-readout": "./src/group-business-readout.mjs",
