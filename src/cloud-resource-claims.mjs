@@ -2,7 +2,9 @@
 // A resource is distinguished from a statement *about* that resource: the
 // former retains one NI address; each dated provider observation is a new
 // predication, with its own SignCell witness and provenance.
-import {address,utteranceCell} from '@red-cup-engineering/signcell/cell';
+import {address,utteranceCell,triple} from '@red-cup-engineering/signcell/cell';
+import {semanticId} from '@red-cup-engineering/computer-content-address-engineering-services-section/semiotic-content-address';
+import {seavtOfJson,isAbsoluteSeavtClock} from '@red-cup-engineering/semiotic-eavt-services-section/admit-seavt-row';
 
 const nonempty=x=>typeof x==='string'&&x.trim().length>0;
 const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
@@ -11,9 +13,16 @@ const observed=x=>x?.status==='observed';
 const bounded=rows=>Array.isArray(rows)&&rows.length<=512?rows:fail('bounded provider collection required');
 const canonicalIdentity=(provider,kind,native)=>address(utteranceCell('cloud-resource-coordinate',
   Object.freeze({provider,kind,native})));
-const witnessOf=(record)=>address(utteranceCell('cloud-compute-native-observation',
-  Object.freeze({kind:record.kind,observedAt:record.observedAt,googleCloud:record.googleCloud,
-    oracleCloud:record.oracleCloud,cloudflare:record.cloudflare})));
+// Canonical source bytes remain in their owned provider observation custody.
+ // SignCell witnesses commit to them by SCA content identity; the compact
+ // admitted triple is itself durable in the existing SEAVT store.
+const witnessOf=(record)=>{
+  const sourceCommitment=semanticId({kind:record.kind,observedAt:record.observedAt,
+    googleCloud:record.googleCloud,oracleCloud:record.oracleCloud,cloudflare:record.cloudflare});
+  const cell=utteranceCell('cloud-compute-native-observation',
+    {sourceCommitment,observedAt:record.observedAt,carrier:record.kind});
+  return Object.freeze({id:address(cell),record:triple(cell),sourceCommitment});
+};
 
 /**
  * Project one genuine dated provider reading as SignCell-addressed SEAVT rows
@@ -24,15 +33,15 @@ const witnessOf=(record)=>address(utteranceCell('cloud-compute-native-observatio
  */
 export function projectCloudResourceClaims(record){
   if(!object(record)||record.kind!=='compute-resource-observation'
-      ||!nonempty(record.observedAt)||!Number.isFinite(Date.parse(record.observedAt)))
+      ||!isAbsoluteSeavtClock(record.observedAt))
     fail('native observation envelope required');
-  const t=record.observedAt,witness=witnessOf(record),rows=[],seen=new Set();
+  const t=record.observedAt,witness=witnessOf(record),rows=[],subjects=[],seen=new Set();
   function claim(provider,kind,native,reading,attrs={}){
     if(!nonempty(provider)||!nonempty(kind)||!nonempty(native)||!object(reading))
       fail('typed provider identity and claim required');
     const e=canonicalIdentity(provider,kind,native);
     if(!nonempty(e)||seen.has(e))fail('ambiguous or duplicate resource identity');
-    seen.add(e);
+    seen.add(e);subjects.push(e);
     const v=Object.freeze({
       kind,provider,
       ...attrs,
@@ -42,9 +51,12 @@ export function projectCloudResourceClaims(record){
       commerce:Object.freeze({offer:'not-admitted',price:'unpriced',
         settlement:'unobserved',executionPermission:'unverified'}),
     });
+    // These are actually admitted SEN coordinates of a SEAVT observation,
+    // not a JSON object merely described as SEAVT. The causal edge uses the
+    // store's existing typed cross-record reference to the retained witness.
     rows.push(Object.freeze({
-      e,a:Object.freeze({event:'cloud-resource-observed',provider,resourceKind:kind}),
-      v,t,causes:Object.freeze([witness]),
+      ...seavtOfJson(e,{event:'cloud-resource-observed',provider,resourceKind:kind},v,t),
+      causes:Object.freeze([{type:'cloud-observation',id:witness.id}]),
     }));
     if(rows.length>512)fail('resource observation exceeds bounded graph');
   }
@@ -146,5 +158,7 @@ export function projectCloudResourceClaims(record){
     }
   }
   return Object.freeze({kind:'561-group.cloud-resource-predications',asOf:t,
-    observationWitness:witness,rows:Object.freeze(rows)});
+    observationWitness:witness.id,sourceCommitment:witness.sourceCommitment,
+    witnessRecord:witness.record,resourceSubjects:Object.freeze(subjects),
+    rows:Object.freeze(rows)});
 }

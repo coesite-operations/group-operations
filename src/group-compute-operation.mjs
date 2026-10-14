@@ -26,21 +26,22 @@ export function groupComputeResourceOperation({ environment = process.env, now =
       catch (error) { if (error?.code !== "ENOENT") throw error; }
       const age = Date.parse(now()) - Date.parse(record?.observedAt);
       const refreshed = record?.kind !== "compute-resource-observation" || !Number.isFinite(age) || age < 0 || age >= 86_400_000;
+      if (refreshed) record = await observeComputeResources();
+      // Project and commit for both fresh and previously cached observations:
+      // otherwise an upgrade leaves up to 24 hours of apparent resource
+      // subjects without admitted SEN/SEAVT rows. The native store's put()
+      // is idempotent by SCA content address, so replay makes no duplicates.
+      const facts = projectCloudResourceClaims(record);
+      const witness = put(environment.METROPLAT_WEB_DATA_DIR, "cloud-observation", facts.witnessRecord);
+      if (witness !== facts.observationWitness)
+        throw new TypeError("SCA witness record address differs from its SignCell address");
+      for (const row of facts.rows) put(environment.METROPLAT_WEB_DATA_DIR, "cloud-resource", row);
       if (refreshed) {
-        record = await observeComputeResources();
-        // The live provider reading becomes queryable Semioverse resource
-        // claims in the *existing* SEAVT journal, not another cloud database.
-        // Never proclaim a resource sellable or executable merely because it
-        // appeared in a provider list. A journal failure prevents caching the
-        // observation as a successfully admitted resource state.
-        const facts = projectCloudResourceClaims(record);
-        for (const row of facts.rows) put(environment.METROPLAT_WEB_DATA_DIR, "cloud-resource", row);
         await mkdir(directory, { recursive: true });
         const temporary = `${path}.tmp-${process.pid}`;
         await writeFile(temporary, JSON.stringify(record) + "\n", { mode: 0o600 });
         await rename(temporary, path);
       }
-      const facts = projectCloudResourceClaims(record);
       const delivery = await sendPeerEvidence({
         environment, peerActor: environment.GROUP_PEER_ACTOR,
         peerInbox: environment.GROUP_PEER_INBOX,
@@ -50,7 +51,7 @@ export function groupComputeResourceOperation({ environment = process.env, now =
           // native witness anchor; peers reconstruct the SEAVT projection.
           resourcePredications: {kind:facts.kind,
             observationWitness:facts.observationWitness,
-            resourceSubjects:facts.rows.map(row=>row.e)} },
+            resourceSubjects:facts.resourceSubjects,sourceCommitment:facts.sourceCommitment} },
       });
       return { observedAt: record.observedAt, resourceCount: facts.rows.length, resourceWitness:facts.observationWitness, delivery };
     },
