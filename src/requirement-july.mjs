@@ -80,6 +80,18 @@ const write = (path, record) => { mkdirSync(dirname(path), { recursive: true });
 /** The July requirement a journal requirement is. */
 export function julyRequirementOf(read, { seat }) {
   const body = read.body;
+  // Work dependencies are part of the original requirement, not a convenience
+  // of its optional board UI. Carry every dependency into the July reader's
+  // canonical board-opening projection; no superseded task is silently freed.
+  const authoredOpening = body.opening ?? {};
+  if (authoredOpening.after !== undefined &&
+      (!Array.isArray(authoredOpening.after) ||
+        authoredOpening.after.some((id) => typeof id !== "string" || !id))) {
+    throw new TypeError("board-opening.after requires named prerequisite work");
+  }
+  const after = [...new Set([...(authoredOpening.after ?? []), ...(body.after ?? [])])];
+  const boardOpening = body.opening !== undefined || after.length > 0
+    ? { ...authoredOpening, ...(after.length ? { after } : {}) } : null;
   const checks = body.metWhen.length > 0
     ? body.metWhen.map((check) => ({ cell: check.cell, target: "held", ...(check.command ? { command: check.command } : {}), "expected-exit": check.expectedExit }))
     // A requirement no check can fail yet keeps its condition, unsettled: the loop reads it unknown.
@@ -88,7 +100,7 @@ export function julyRequirementOf(read, { seat }) {
     id: body.id, name: body.name, kind: "requirement", "raised-by": body.raisedBy, asks: body.asks, "met-when": checks,
     ...(body.tier ? { tier: body.tier } : {}), ...(body.realizedBy ? { "realized-by": body.realizedBy } : {}),
     "x-provenance": { "recorded-by": read.signature?.seat ?? seat, "recorded-on": day(read.recordedAt), section: body.section, class: body.class, authority: body.authority,
-      sources: body.sources, ...(body.opening ? { "board-opening": body.opening } : {}), ...(body.breakClass ? { "break-class": body.breakClass } : {}),
+      sources: body.sources, ...(boardOpening ? { "board-opening": boardOpening } : {}), ...(body.breakClass ? { "break-class": body.breakClass } : {}),
       ...(body.metWhen.length === 0 ? { "pending-conditions": "No met-when was stated; this condition stands unsettled (read unknown) until a check that exercises the requirement replaces it." } : {}) },
   };
 }
