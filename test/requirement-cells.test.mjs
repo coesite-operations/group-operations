@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { REQUIREMENT, REQUIREMENT_SECTION, RULING, existenceOnly, readGoverning, recordGoverning } from "../src/requirement-cells.mjs";
-import { exercise, maintainRequirements, readingsOf } from "../src/requirement-maintenance.mjs";
+import { exercise, maintainRequirements, readingsOf, metWhenSatisfied } from "../src/requirement-maintenance.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
 import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
@@ -86,6 +86,66 @@ test("a check that only finds a file is contested; a check that cannot run is un
   assert.equal(exercise({ cell: "a", command: "true", expectedExit: 0, exercises: "existence" }, { cwd }).charge, "contested");
   assert.equal(exercise({ cell: "a", command: "false", expectedExit: 0, exercises: "behavior" }, { cwd }).charge, "denied");
   assert.equal(exercise({ cell: "a", command: "no-such-command-anywhere", expectedExit: 0, exercises: "behavior" }, { cwd }).charge, "unknown");
+});
+
+test("FOUR support is not satisfaction: every behavioral condition and original order must hold", () => {
+  const reading = (charge, exercises = "behavior") => ({
+    charge, exercises,
+    told: { for: ["held", "contested"].includes(charge) ? ["one-positive-witness"] : [],
+      against: ["denied", "contested"].includes(charge) ? ["one-negative-witness"] : [] },
+  });
+  assert.equal(metWhenSatisfied([reading("held"), reading("held")], "held"), true);
+  assert.equal(metWhenSatisfied([reading("held"), reading("unknown")], "held"), false);
+  assert.equal(metWhenSatisfied([reading("held"), reading("denied")], "held"), false);
+  assert.equal(metWhenSatisfied([reading("held"), reading("contested")], "held"), false);
+  assert.equal(metWhenSatisfied([reading("held", "existence")], "held"), false);
+  assert.equal(metWhenSatisfied([reading("held")], "contested"), false);
+  assert.equal(metWhenSatisfied([], "held"), false);
+  assert.throws(() => metWhenSatisfied(null, "held"), /conditions must be a list/u);
+});
+
+test("an incomplete acceptance conjunct stays active even when evidence charge reads held", () => {
+  const { root, keys, journal } = repository();
+  try {
+    recordGoverning({ kind: REQUIREMENT, input: requirement({
+      id: "partial-positive", name: "A healthy service with two receiving conditions",
+      metWhen: [
+        { cell: "service:local", command: "true" },
+        { cell: "service:customer", command: "nonexistent-receiving-command-561" },
+      ],
+    }), repositoryRoot: root, seat: SEAT, keyDirectory: keys });
+    recordGoverning({ kind: REQUIREMENT, input: requirement({
+      id: "dependent-production", name: "A dependent service begins only after acceptance",
+      after: ["partial-positive"], metWhen: [{ cell: "dependent:result", command: "false" }],
+    }), repositoryRoot: root, seat: SEAT, keyDirectory: keys });
+    assert.deepEqual(carryToJuly({
+      repositoryRoot: root, schemaDirectory: SCHEMAS, seat: SEAT,
+      scratch: mkdtempSync(join(tmpdir(), "scratch-")),
+    }).refused, []);
+    const result = maintainRequirements({
+      repositoryRoot: root, journalRoot: journal, seat: SEAT,
+      poster: "requirement-maintenance", keyDirectory: keys,
+      at: "2026-10-14T05:00:00.000Z", schemaDirectory: SCHEMAS,
+    });
+    const partial = result.readings.find((x) => x.requirement === "partial-positive");
+    assert.equal(partial.charge, "held"); // FOUR knowledge aggregation retains its original testimony.
+    assert.equal(partial.satisfied, false); // Universal behavioral acceptance does not.
+    assert.match(result.evidence, /FOUR-held=1 behavior-satisfied=0/u);
+    const openings = result.openings.map((row) => row.opening);
+    const unreceived = openings.find((row) => row.tags?.includes("requirement-partial-positive"));
+    assert.equal(unreceived.move, "request");
+    assert.ok(unreceived.tags.includes("completion-unreceived"));
+    assert.match(unreceived.context, /NOT complete/u);
+    const dependent = openings.find((row) => row.tags?.includes("requirement-dependent-production"));
+    assert.match(dependent.context, /Held back after: partial-positive/u);
+    const historical = readingsOf({ journalRoot: journal, requirement: "partial-positive" });
+    assert.equal(historical.length, 1);
+    assert.equal(historical[0].charge, "held");
+    assert.equal(historical[0].satisfied, false);
+  } finally {
+    for (const directory of [root, keys, journal])
+      rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("the loop reads every requirement, records signed readings, and opens a request carrying its user for each not held", () => {
