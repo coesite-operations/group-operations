@@ -4,6 +4,7 @@ import { jsonRepr } from "@red-cup-engineering/http-services-section/representat
 import { guardOperators, isOperator } from "@red-cup-engineering/metroplat-operations-console/people";
 import { currentPeerEvidence } from "./peer-evidence.mjs";
 import { projectCloudResourceClaims } from "./cloud-resource-claims.mjs";
+import { readCloudResource } from "./cloud-resource-receiving.mjs";
 
 export const COMPUTE_OBJECT_KIND = "561-group.compute-resource-observation.v1";
 const validComputeRecord = (record) => record?.kind === "compute-resource-observation"
@@ -95,6 +96,32 @@ export function groupOperations({ config, configuration = {} }) {
       const record = readCompute();
       if (record === null) throw new Error("No admitted compute observation from the author instance");
       return { ...record, resourcePredications: projectCloudResourceClaims(record) };
+    },
+  }),Object.freeze({
+    name: "compute_resource",
+    description: "Read one cloud compute or data resource at its stable SCA ni: subject, from the installed native SEAVT store or the last authenticated signed peer observation.",
+    inputSchema: {type:"object",required:["subject"],properties:{subject:{type:"string"}},additionalProperties:false},
+    annotations: {readOnlyHint:true,idempotentHint:true,openWorldHint:false},
+    visible: mayReadCompute,
+    handler: ({subject},context) => {
+      if(!mayReadCompute(context))throw new Error("cloud resource requires an operator");
+      if(typeof subject!=="string"||!/^ni:\/\/\/sha-256;[A-Za-z0-9_-]{43}$/u.test(subject))
+        throw new TypeError("an exact SCA ni: resource subject is required");
+      if(new URL(authorActor).origin===new URL(config.publicBaseUrl).origin)
+        return readCloudResource(config.dataDir,subject) ??
+          {kind:"561-group.cloud-resource-current",subject,state:"unobserved-in-native-store"};
+      // A signed peer reading is useful, but cannot be misreported as a
+      // locally committed native SEAVT resource head. Never mutate a
+      // read-only MCP request to install remote claims.
+      const record=readCompute();
+      if(record===null)return {kind:"561-group.cloud-resource-current",subject,state:"peer-observation-unavailable"};
+      const facts=projectCloudResourceClaims(record);
+      const index=facts.resourceSubjects.indexOf(subject);
+      return index<0
+        ? {kind:"561-group.cloud-resource-current",subject,state:"unobserved-in-signed-peer"}
+        : {kind:"561-group.cloud-resource-current",subject,
+            state:"signed-peer-projection-not-locally-stored",asOf:facts.asOf,
+            sourceCommitment:facts.sourceCommitment,observation:facts.rows[index]};
     },
   })];
   return { tools, applications: [guardOperators({ resources }, () => true, {

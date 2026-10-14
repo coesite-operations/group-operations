@@ -6,6 +6,7 @@ import { COMPUTE_OBJECT_KIND } from "./group-operations.mjs";
 import { sendPeerEvidence } from "./peer-evidence.mjs";
 import { projectCloudResourceClaims } from "./cloud-resource-claims.mjs";
 import { put } from "@red-cup-engineering/semiotic-eavt-services-section/store";
+import { receiveCloudResourceRow } from "./cloud-resource-receiving.mjs";
 
 export function groupComputeResourceOperation({ environment = process.env, now = () => new Date().toISOString() } = {}) {
   return operation({
@@ -35,7 +36,8 @@ export function groupComputeResourceOperation({ environment = process.env, now =
       const witness = put(environment.METROPLAT_WEB_DATA_DIR, "cloud-observation", facts.witnessRecord);
       if (witness !== facts.observationWitness)
         throw new TypeError("SCA witness record address differs from its SignCell address");
-      for (const row of facts.rows) put(environment.METROPLAT_WEB_DATA_DIR, "cloud-resource", row);
+      const accepted = facts.rows.map(row=>
+        receiveCloudResourceRow(environment.METROPLAT_WEB_DATA_DIR,row));
       if (refreshed) {
         await mkdir(directory, { recursive: true });
         const temporary = `${path}.tmp-${process.pid}`;
@@ -53,7 +55,11 @@ export function groupComputeResourceOperation({ environment = process.env, now =
             observationWitness:facts.observationWitness,
             resourceSubjects:facts.resourceSubjects,sourceCommitment:facts.sourceCommitment} },
       });
-      return { observedAt: record.observedAt, resourceCount: facts.rows.length, resourceWitness:facts.observationWitness, delivery };
+      return { observedAt: record.observedAt, resourceCount: accepted.length,
+        resourceWitness:facts.observationWitness,
+        resourceReceiving:accepted.reduce((groups,item)=>{
+          groups[item.status]=(groups[item.status]??0)+1;return groups;
+        },{}), delivery };
     },
   });
 }
