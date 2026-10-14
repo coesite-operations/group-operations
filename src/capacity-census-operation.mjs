@@ -1,4 +1,4 @@
-import { assessAllocationReadiness } from '@union-officer-academy/union-officer-academy/allocation-readiness';
+import { assessAllocationReadiness, planNonoverlappingAllocations } from '@union-officer-academy/union-officer-academy/allocation-readiness';
 
 const nonempty = x => typeof x === 'string' && x.trim().length > 0;
 const date = x => nonempty(x) && /^\d{4}-\d{2}-\d{2}$/.test(x) && !Number.isNaN(Date.parse(`${x}T00:00:00Z`)) && new Date(`${x}T00:00:00Z`).toISOString().slice(0, 10) === x;
@@ -104,6 +104,18 @@ export async function executeCapacityCensusProcedure(instance, {
     out.providerEvidence = 'NATIVE_VERIFIED';
     out.capacityState = assay.state;
     out.runtimeRevision = nonempty(observation.runtimeRevision) ? observation.runtimeRevision : 'UNKNOWN';
+    // The authored/native census is separately authenticated before a
+    // projected allocation may be called a feasible candidate. This is a
+    // maximum-cardinality finite *work-to-character* matching, not a new
+    // allocation, promise, authority grant, or compute-token capacity claim.
+    // Preserve even its deficit as a receiving signal so the consuming
+    // enterprise can source the specific missing role instead of counting
+    // every eligible work scope as simultaneously executable.
+    if (assay.state === 'SOME_ALLOCATABLE') {
+      out.matchingPressure = planNonoverlappingAllocations(observation.pages, {
+        expectedDate: b.expectedDate
+      });
+    }
   } else {
     out.providerEvidence = 'UNVERIFIED';
     out.capacityState = 'UNKNOWN';
