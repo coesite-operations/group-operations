@@ -195,3 +195,52 @@ test('explicit empty authority performs neither observation nor reporting', asyn
   assert.equal(result.groupAcceptance, 'NOT_VERIFIED');
 });
 
+
+test('authenticated census matching increases feasible simultaneous office coverage through augmenting paths',async()=>{
+  const eligible=(scope,ids)=>({scope,state:'allocatable',reasons:[],candidates:ids.map(id=>({
+    office:'office:market',duty:'duty:science-to-engineering',character:{id},
+    evidence:['provider:source-admitted'],load:[],reasons:[]
+  }))});
+  const observed={origin:'native-provider',provenance:{providerReceipt:'native-allocations-v1'},
+    runtimeRevision:'source-worktree-1',
+    pages:[{cursor:0,result:{kind:'metroplat.work.allocation-candidates',
+      date:binding.expectedDate,remaining:0,
+      items:[eligible('A',['shared','spare']),eligible('B',['shared'])]}}]};
+  let reported;
+  const result=await executeCapacityCensusProcedure(bind(),{
+    readCensus:async()=>observed,
+    verifyProvider:async (received,ctx)=>{
+      assert.equal(received,observed.provenance);
+      assert.equal(ctx.expectedDate,binding.expectedDate);return true;
+    },
+    deliverToGroup:async evidence=>{reported=evidence;return deliverToGroup();},
+    verifyGroupReceipt:async()=>true,
+  });
+  assert.equal(result.providerEvidence,'NATIVE_VERIFIED');
+  assert.equal(result.matchingPressure.state,'MAXIMAL_MATCHING');
+  assert.equal(result.matchingPressure.matchedCount,2);
+  assert.equal(result.matchingPressure.executionAuthorized,false);
+  assert.equal(result.matchingPressure.independentReceivingClaimAllowed,false);
+  assert.deepEqual(result.matchingPressure.assignments.map(x=>[x.scope,x.characterId]),[
+    ['A','spare'],['B','shared']]);
+  assert.equal(reported.matchingPressure.matchedCount,2,'real Coesite reporting carries matched source reading');
+  assert.equal(result.groupAcceptance,'INDEPENDENTLY_VERIFIED');
+});
+test('unverified provider census never generates placement advice or self-authorized effects',async()=>{
+  const provider=await readCensus();
+  const r=await executeCapacityCensusProcedure(bind(),{
+    readCensus:async()=>provider,verifyProvider:async()=>false,deliverToGroup
+  });
+  assert.equal(r.providerEvidence,'UNVERIFIED');
+  assert.equal(r.capacityState,'UNKNOWN');
+  assert.equal(Object.hasOwn(r,'matchingPressure'),false);
+});
+test('source states allocatable without actual character IDs: preserve deficit, not fictional workers',async()=>{
+  const r=await executeCapacityCensusProcedure(bind(),{
+    readCensus,verifyProvider:async()=>true,deliverToGroup
+  });
+  assert.equal(r.capacityState,'SOME_ALLOCATABLE');
+  assert.equal(r.matchingPressure.state,'CAPACITY_GAP');
+  assert.deepEqual(r.matchingPressure.unidentifiedCandidateScopes,['group-service']);
+  assert.deepEqual(r.matchingPressure.assignments,[]);
+});
