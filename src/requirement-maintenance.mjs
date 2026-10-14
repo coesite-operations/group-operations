@@ -67,17 +67,31 @@ export function joined(readings) {
   return Object.freeze({ told, charge: chargeOfTold({ for: told.for.length > 0, against: told.against.length > 0 }) });
 }
 
+/** Epistemic FOUR support is not conjunctive completion: every independent
+ * behavioral condition must have been executed and held, without contrary or
+ * unknown evidence, and the original demand must itself be corroborated.
+ * The FOUR charge remains unchanged for sign/journal reasoning.
+ */
+export function metWhenSatisfied(conditions, requirementCharge) {
+  if (!Array.isArray(conditions)) throw new TypeError("requirement conditions must be a list");
+  return requirementCharge === "held" && conditions.length > 0 && conditions.every((condition) =>
+    condition?.exercises === "behavior" && condition.charge === "held" &&
+    Array.isArray(condition.told?.for) && condition.told.for.length > 0 &&
+    Array.isArray(condition.told?.against) && condition.told.against.length === 0);
+}
+
 /** Read one requirement: run its checks and record the reading as a signed cell. */
 export function readRequirement(requirement, { cwd, key, journalRoot, at, timeoutMs }) {
   const conditions = requirement.body.metWhen.map((check) => exercise(check, { cwd, timeoutMs }));
   const { told, charge } = joined(conditions);
+  const satisfied = metWhenSatisfied(conditions, requirement.charge);
   // Rendanheyi: the merged work that names this requirement, and the worker who did each.
   const contributions = contributionsOf(cwd, requirement.body.id);
   const body = { kind: READING, id: `${requirement.body.id}@${at}`, requirement: requirement.body.id, requirementAddress: requirement.address,
     requirementCharge: requirement.charge, at, charge, conditions, contributions };
   const record = signed({ body, cell: cell(`requirement:${requirement.body.id}`, "met", `requirement:${requirement.body.id}`, told), key, at });
   const admitted = admitSigned({ root: journalRoot, record, at });
-  return Object.freeze({ requirement, conditions, charge, contributions, event: admitted.events[0] });
+  return Object.freeze({ requirement, conditions, charge, satisfied, contributions, event: admitted.events[0] });
 }
 
 /** Read one ruling's mechanical checks (rulings with none are carried, not checked). */
@@ -98,6 +112,7 @@ function contextOf(reading, gate) {
     `Requirement ${reading.requirement.body.id} (${reading.requirement.address}), raised by ${reading.requirement.body.raisedBy}, reads ${reading.charge}: ${describe(reading)}.`,
     reading.requirement.charge === "contested" ? `The requirement itself is contested (${reading.requirement.cell.against.join("; ")}): the raiser corroborates or withdraws it; work proceeds under the contest.` : undefined,
     reading.charge === "contested" ? "Huidu: the charge is contested, not failed. Work proceeds under the contest, which is recorded in the reading this request cites." : undefined,
+    !reading.satisfied ? "The original requirement is NOT complete: every behavioral metWhen check and corroborated source must hold; positive FOUR testimony from one check is not collective acceptance." : undefined,
     reading.conditions.some((condition) => condition.exercises === "existence") ? "Checks that only find a file are evidence that something was written, never that the capability works: replace each with a check that exercises it." : undefined,
     gate.length > 0 ? `Held back after: ${gate.join(", ")} (denied or unknown).` : undefined,
     `Asked, in the raiser's words: ${reading.requirement.body.asks}`,
@@ -114,7 +129,7 @@ export function openingOfReading(reading, { poster, at, gateOf = () => [] }) {
   const requirement = reading.requirement.body;
   const opening = requirement.opening ?? {};
   const gate = gateOf(requirement);
-  const tags = [MAINTENANCE_TAG, `requirement-${requirement.id}`, `charge-${reading.charge}`];
+  const tags = [MAINTENANCE_TAG, `requirement-${requirement.id}`, `charge-${reading.charge}`, "completion-unreceived"];
   const sources = [{ kind: "record", locator: `${reading.requirement.source}#${reading.requirement.address}` }];
   const common = { by: poster, tags, at, scope: [...new Set([sectionScope(requirement.section), ...(opening.scope ?? [])])], sources };
   const slugOf = (value, fallback) => String(value ?? fallback).toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "") || fallback;
@@ -175,12 +190,16 @@ export function maintainRequirements({ repositoryRoot, journalRoot, seat, poster
     const rulings = { records: pools.rulings, refused: [] };
     const selected = requirements.records.filter((record) => only === undefined || only.includes(record.body.id));
     const readings = selected.map((requirement) => readRequirement(requirement, { cwd: repositoryRoot, key, journalRoot, at, timeoutMs }));
-    const chargeOf = new Map(readings.map((reading) => [reading.requirement.body.id, reading.charge]));
-    // Huidu: contested prerequisites let dependents proceed; only denied or unknown ones hold them back.
-    const gateOf = (requirement) => (requirement.after ?? []).filter((id) => ["denied", "unknown"].includes(chargeOf.get(id)));
+    const statusOf = new Map(readings.map((reading) => [reading.requirement.body.id, reading]));
+    // Huidu permits contested prerequisites; a merely epistemic "held" one
+    // with unfinished checks must NOT silently release dependent work.
+    const gateOf = (requirement) => (requirement.after ?? []).filter((id) => {
+      const previous = statusOf.get(id);
+      return !previous || (!previous.satisfied && previous.charge !== "contested");
+    });
     const rulingReads = rulings.records.map((ruling) => readRuling(ruling, { cwd: repositoryRoot, timeoutMs }));
     const openings = [
-      ...readings.filter((reading) => reading.charge !== "held").map((reading) => ({ opening: openingOfReading(reading, { poster, at, gateOf }) })),
+      ...readings.filter((reading) => !reading.satisfied).map((reading) => ({ opening: openingOfReading(reading, { poster, at, gateOf }) })),
       ...rulingReads.filter((read) => read.broken.length > 0).map((read) => ({ opening: openingOfRuling(read, { poster, at }) })),
       ...requirements.refused.map((record) => ({ opening: openingOf({ move: "report", by: poster, at, law: "Every requirement and ruling is a signed cell whose signature holds.",
         subject: `requirement:${record.body?.id ?? "unknown"}`, observation: `A recorded requirement at ${record.source} fails its signature: ${record.signature.reason}.`, tags: [MAINTENANCE_TAG] }) })),
@@ -189,9 +208,9 @@ export function maintainRequirements({ repositoryRoot, journalRoot, seat, poster
     return Object.freeze({
       kind: "requirement-maintenance-findings.v1", poster,
       domain: Object.freeze({ tags: Object.freeze([MAINTENANCE_TAG, RULING_TAG]) }),
-      evidence: `requirements=${readings.length} held=${tally("held")} contested=${tally("contested")} denied=${tally("denied")} unknown=${tally("unknown")}; rulings=${rulingReads.length} broken=${rulingReads.filter((read) => read.broken.length > 0).length}; refused=${requirements.refused.length + rulings.refused.length}`,
+      evidence: `requirements=${readings.length} FOUR-held=${tally("held")} behavior-satisfied=${readings.filter((reading) => reading.satisfied).length} contested=${tally("contested")} denied=${tally("denied")} unknown=${tally("unknown")}; rulings=${rulingReads.length} broken=${rulingReads.filter((read) => read.broken.length > 0).length}; refused=${requirements.refused.length + rulings.refused.length}`,
       openings: Object.freeze(openings),
-      readings: Object.freeze(readings.map((reading) => Object.freeze({ requirement: reading.requirement.body.id, charge: reading.charge, requirementCharge: reading.requirement.charge,
+      readings: Object.freeze(readings.map((reading) => Object.freeze({ requirement: reading.requirement.body.id, charge: reading.charge, satisfied: reading.satisfied, requirementCharge: reading.requirement.charge,
         conditions: reading.conditions, contributions: reading.contributions, event: reading.event }))),
       rulings: Object.freeze(rulingReads.map((read) => Object.freeze({ ruling: read.ruling.body.id, charge: read.ruling.charge, checks: read.checks }))),
     });
@@ -204,7 +223,11 @@ export function maintainRequirements({ repositoryRoot, journalRoot, seat, poster
 export function readingsOf({ journalRoot, requirement }) {
   return createSemanticRecordJournal({ root: journalRoot, objectKind: READING }).query({ category: CATEGORY[READING] })
     .filter(({ record }) => requirement === undefined || record.mark.content.requirement === requirement)
-    .map(({ record, recordedAt, told }) => Object.freeze({ ...record.mark.content, recordedAt, seat: record.claim.issuer, charge: chargeOfTold(told) }));
+    .map(({ record, recordedAt, told }) => Object.freeze({
+      ...record.mark.content, recordedAt, seat: record.claim.issuer,
+      charge: chargeOfTold(told),
+      satisfied: metWhenSatisfied(record.mark.content.conditions, record.mark.content.requirementCharge),
+    }));
 }
 
 export { REQUIREMENT, RULING };
