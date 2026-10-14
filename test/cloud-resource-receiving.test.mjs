@@ -99,3 +99,13 @@ test('the installed Group MCP exposes an operator-scoped SCA resource read, with
   const operation=readFileSync(new URL('../src/group-compute-operation.mjs',import.meta.url),'utf8');
   assert.match(operation,/receiveCloudResourceRow\(environment.METROPLAT_WEB_DATA_DIR,row\)/);
 });
+
+test('Coesite retains cloud policy but no longer forks Red Cup resource-head storage law',()=>{
+ const source=readFileSync(new URL('../src/cloud-resource-receiving.mjs',import.meta.url),'utf8');
+ assert.match(source,/semiotic-eavt-services-section\/causal-resource-head/u);
+ assert.match(source,/createCausalResourceHead/u);
+ assert.match(source,/recordType:'cloud-resource'/u);
+ assert.match(source,/witnessType:'cloud-observation'/u);
+ assert.match(source,/event:'cloud-resource-observed'/u);
+ assert.doesNotMatch(source,/writeHead\(|put\(|HeadConflict|compareAbsoluteSeavtClocks/u);
+});
