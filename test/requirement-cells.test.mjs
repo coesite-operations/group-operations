@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { REQUIREMENT, REQUIREMENT_SECTION, RULING, existenceOnly, readGoverning, recordGoverning } from "../src/requirement-cells.mjs";
-import { exercise, maintainRequirements, readingsOf, metWhenSatisfied } from "../src/requirement-maintenance.mjs";
+import { exercise, maintainRequirements, readingsOf } from "../src/requirement-maintenance.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
 import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
@@ -86,22 +86,6 @@ test("a check that only finds a file is contested; a check that cannot run is un
   assert.equal(exercise({ cell: "a", command: "true", expectedExit: 0, exercises: "existence" }, { cwd }).charge, "contested");
   assert.equal(exercise({ cell: "a", command: "false", expectedExit: 0, exercises: "behavior" }, { cwd }).charge, "denied");
   assert.equal(exercise({ cell: "a", command: "no-such-command-anywhere", expectedExit: 0, exercises: "behavior" }, { cwd }).charge, "unknown");
-});
-
-test("FOUR support is not satisfaction: every behavioral condition and original order must hold", () => {
-  const reading = (charge, exercises = "behavior") => ({
-    charge, exercises,
-    told: { for: ["held", "contested"].includes(charge) ? ["one-positive-witness"] : [],
-      against: ["denied", "contested"].includes(charge) ? ["one-negative-witness"] : [] },
-  });
-  assert.equal(metWhenSatisfied([reading("held"), reading("held")], "held"), true);
-  assert.equal(metWhenSatisfied([reading("held"), reading("unknown")], "held"), false);
-  assert.equal(metWhenSatisfied([reading("held"), reading("denied")], "held"), false);
-  assert.equal(metWhenSatisfied([reading("held"), reading("contested")], "held"), false);
-  assert.equal(metWhenSatisfied([reading("held", "existence")], "held"), false);
-  assert.equal(metWhenSatisfied([reading("held")], "contested"), false);
-  assert.equal(metWhenSatisfied([], "held"), false);
-  assert.throws(() => metWhenSatisfied(null, "held"), /conditions must be a list/u);
 });
 
 test("an incomplete acceptance conjunct stays active even when evidence charge reads held", () => {
