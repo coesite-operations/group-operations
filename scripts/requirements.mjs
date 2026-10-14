@@ -110,8 +110,16 @@ try {
       if (typeof options.journal !== "string") throw new TypeError("--journal names the directory the readings are recorded in");
       const result = maintainRequirements({ repositoryRoot: repositoryRoot(), journalRoot: resolve(options.journal), seat: seat(), poster: options.poster ?? "requirement-maintenance",
         only: typeof options.only === "string" ? options.only.split(",") : undefined });
-      print({ evidence: result.evidence, readings: result.readings.map((reading) => ({ requirement: reading.requirement, charge: reading.charge,
-        conditions: reading.conditions.map((condition) => `${condition.cell}=${condition.charge}`) })), openings: result.openings.map(({ opening }) => ({ move: opening.move, id: opening.id, tags: opening.tags })) });
+      // Do not turn the source-owned executable Work Arena opening into a
+      // label-only ticket. The next agent needs the original need, conditions,
+      // dependencies, evidence and receiving party to perform the work.
+      print({ evidence: result.evidence,
+        readings: result.readings.map((reading) => ({ requirement: reading.requirement,
+          charge: reading.charge, satisfied: reading.satisfied,
+          conditions: reading.conditions.map((condition) => ({
+            cell: condition.cell, charge: condition.charge, exercises: condition.exercises
+          })) })),
+        openings: result.openings.map(({ opening }) => opening) });
       break;
     }
     case "check-pull-request": {
