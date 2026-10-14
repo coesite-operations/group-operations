@@ -111,33 +111,44 @@ export async function observeComputeResources() {
     oracle = { status: tenancyReading.status, tenancyName: tenancyReading.value?.data?.name, configuredRegion: region, profiles, subscribedRegions: (regions.value?.data ?? []).map((item) => item["region-name"]), compartments: (compartments.value?.data ?? []).map((item) => ({ name: item.name, id: item.id })), instances };
   }
 
+  // Cloudflare's Workers Builds API (2026-09) requires a *user-scoped*
+  // Workers CI Read token. Existing temporary account-scoped route/Worker
+  // tokens are invalid for this endpoint and must never be used as fallback.
   let cloudflare = { status: "credential-unavailable" };
-  if (process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN) {
+  const cfAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const cfRouteToken = Boolean(process.env.CLOUDFLARE_API_TOKEN);
+  const cfBuildUserToken = Boolean(process.env.CLOUDFLARE_WORKERS_CI_USER_TOKEN);
+  if (cfAccount && (cfRouteToken || cfBuildUserToken)) {
+    let workersBuildMinutes = { status: "unavailable", reason: "user-scoped-ci-token-unavailable" };
     try {
       const provider = await import("@red-cup-engineering/cloudflare-services-section/derive-cloudflare-account-inventory");
-      const reading = await provider.deriveCloudflareAccountInventory({ accountId: process.env.CLOUDFLARE_ACCOUNT_ID, tokenEnvironmentVariable: "CLOUDFLARE_API_TOKEN" });
-      // Workers Builds native limits require separate Workers CI Read scope.
-      // A route inventory token can be valid even if this capability is denied.
-      let workersBuildMinutes = { status: "unavailable", reason: "reader-not-admitted" };
-      if (typeof provider.observeCloudflareBuildMinutes === "function") {
+      if (cfBuildUserToken && typeof provider.observeCloudflareBuildMinutes === "function") {
         try {
           const allowance = await provider.observeCloudflareBuildMinutes({
-            accountId: process.env.CLOUDFLARE_ACCOUNT_ID, tokenEnvironmentVariable: "CLOUDFLARE_API_TOKEN",
+            accountId: cfAccount,
+            tokenEnvironmentVariable: "CLOUDFLARE_WORKERS_CI_USER_TOKEN",
           });
           workersBuildMinutes = allowance.type === "CloudflareWorkersBuildMinutesObservation"
             ? { status: allowance.status, observedAt: allowance.observedAt, refreshAt: allowance.refreshAt }
             : { status: "unavailable", reason: allowance.code ?? "unknown-refusal" };
         } catch { workersBuildMinutes = { status: "unavailable", reason: "native-build-observation-failed" }; }
       }
-      cloudflare = reading.type === "CloudflareAccountInventory" ? {
-        status: "observed", accountId: reading.accountId, counts: reading.counts, workersBuildMinutes,
-        zones: reading.zones.map((zone) => ({ name: zone.name, status: zone.status,
-          destinations: zone.records.filter((record) => ["A", "AAAA", "CNAME"].includes(record.type)).map((record) => ({ type: record.type, name: record.name, content: record.content, proxied: record.proxied })) })),
-        workers: reading.workers.map((worker) => ({ name: worker.id, modifiedOn: worker.modifiedOn })),
-        customDomains: reading.customDomains.map((domain) => ({ hostname: domain.hostname, service: domain.service, zoneName: domain.zoneName })),
-      } : { status: "unavailable", reason: reading.code };
+      if (cfRouteToken) {
+        const reading = await provider.deriveCloudflareAccountInventory({
+          accountId: cfAccount, tokenEnvironmentVariable: "CLOUDFLARE_API_TOKEN",
+        });
+        cloudflare = reading.type === "CloudflareAccountInventory" ? {
+          status: "observed", accountId: reading.accountId, counts: reading.counts, workersBuildMinutes,
+          zones: reading.zones.map(zone => ({ name: zone.name, status: zone.status,
+            destinations: zone.records.filter(record => ["A", "AAAA", "CNAME"].includes(record.type))
+              .map(record => ({ type: record.type, name: record.name, content: record.content, proxied: record.proxied })) })),
+          workers: reading.workers.map(worker => ({ name: worker.id, modifiedOn: worker.modifiedOn })),
+          customDomains: reading.customDomains.map(domain =>
+            ({ hostname: domain.hostname, service: domain.service, zoneName: domain.zoneName })),
+        } : { status: "unavailable", reason: reading.code, workersBuildMinutes };
+      } else cloudflare = { status: "inventory-credential-unavailable", workersBuildMinutes };
     } catch {
-      cloudflare = { status: "unavailable", reason: "reader-failed" };
+      cloudflare = { status: "unavailable", reason: "reader-failed", workersBuildMinutes };
     }
   }
 
