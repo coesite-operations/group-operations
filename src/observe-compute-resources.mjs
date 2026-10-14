@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import {address,utteranceCell} from "@red-cup-engineering/signcell/cell";
 
 // This is a standalone Coesite package. The owning Cloudflare Engineering
 // package exports the provider reader; an old monorepo-relative source path
@@ -72,6 +73,9 @@ export async function observeComputeResources() {
     const run = enabled.includes("run.googleapis.com")
       ? await gcloud(["run", "services", "list", `--project=${id}`, "--platform=managed", "--region=us-central1"])
       : { status: "not-enabled" };
+    const storage = enabled.includes("storage.googleapis.com")
+      ? await gcloud(["storage", "buckets", "list", `--project=${id}`])
+      : { status: "not-enabled" };
     const compute = enabled.includes("compute.googleapis.com") && billing.value?.billingEnabled !== false
       ? await gcloud(["compute", "instances", "list", `--project=${id}`])
       : { status: "not-enabled" };
@@ -86,6 +90,12 @@ export async function observeComputeResources() {
           latestReadyRevision: service.status?.latestReadyRevisionName,
           traffic: (service.status?.traffic ?? []).map((target) => ({ revision: target.revisionName, percent: target.percent ?? 0, tag: target.tag })) };
       }) } : run,
+      storageBuckets: storage.status === "observed" && Array.isArray(storage.value)
+        ? { status: "observed", buckets: storage.value.map((bucket) => ({
+          name: bucket.name, location: bucket.location ?? null,
+          storageClass: bucket.storageClass ?? null,
+        })) }
+        : storage.status === "observed" ? { status: "unavailable", reason: "invalid-native-bucket-list" } : storage,
       computeInstances: billing.value?.billingEnabled === false
         ? { status: "unavailable", reason: "billing-disabled; Compute Engine list cannot establish an empty inventory" }
         : compute.status === "observed" ? { status: "observed", instances: value(compute).map((instance) => ({ name: instance.name, zone: instance.zone?.split("/").at(-1), status: instance.status, machineType: instance.machineType?.split("/").at(-1) })) } : compute,
@@ -99,16 +109,42 @@ export async function observeComputeResources() {
   if (profile) {
     const tenancy = ociField(ociConfig, profile, "tenancy");
     const region = ociField(ociConfig, profile, "region");
+    const tenancyIdentity = tenancy
+      ? address(utteranceCell("oci-native-tenancy-coordinate", {tenancy})) : undefined;
     const tenancyReading = tenancy ? await oci(profile, ["iam", "tenancy", "get", "--tenancy-id", tenancy]) : { status: "unavailable", reason: "tenancy-not-configured" };
     const regions = tenancy ? await oci(profile, ["iam", "region-subscription", "list", "--tenancy-id", tenancy]) : { status: "unavailable", reason: "tenancy-not-configured" };
     const compartments = tenancy ? await oci(profile, ["iam", "compartment", "list", "--compartment-id", tenancy, "--compartment-id-in-subtree", "true", "--all"]) : { status: "unavailable", reason: "tenancy-not-configured" };
     const compartmentIds = [tenancy, ...(compartments.value?.data ?? []).map((item) => item.id)].filter(Boolean);
+    // OCI Object Storage is a distinct *data carrier* from VM capacity.
+    // Listing buckets does not establish item hashes, licenses or x402 SKU rights.
+    const namespaceReading = tenancy
+      ? await oci(profile, ["os", "ns", "get", "--compartment-id", tenancy])
+      : { status: "unavailable", reason: "tenancy-not-configured" };
+    const namespace = typeof namespaceReading.value?.data === "string"
+      ? namespaceReading.value.data : undefined;
+    const buckets = [];
+    for (const id of compartmentIds) {
+      const reading = namespace
+        ? await oci(profile, ["os", "bucket", "list", "--compartment-id", id,
+          "--namespace-name", namespace, "--all"])
+        : { status: "unavailable", reason: "namespace-unavailable" };
+      buckets.push({compartmentId: id,
+        status: reading.status === "observed" && Array.isArray(reading.value?.data)
+          ? "observed" : "unavailable",
+        ...(reading.status === "observed" && Array.isArray(reading.value?.data)
+          ? {items: reading.value.data.map(item => ({
+            name:item.name, namespace:item.namespace ?? namespace,
+            storageTier:item["storage-tier"] ?? null,
+          }))} : {reason:reading.reason ?? "invalid-native-bucket-list"})});
+    }
     const instances = [];
     for (const id of compartmentIds) {
       const reading = await oci(profile, ["compute", "instance", "list", "--compartment-id", id, "--all"]);
       instances.push({ compartmentId: id, status: reading.status, ...(reading.status === "observed" ? { items: (reading.value.data ?? reading.value).map((item) => ({ name: item["display-name"], state: item["lifecycle-state"], shape: item.shape, availabilityDomain: item["availability-domain"] })) } : { reason: reading.reason }) });
     }
-    oracle = { status: tenancyReading.status, tenancyName: tenancyReading.value?.data?.name, configuredRegion: region, profiles, subscribedRegions: (regions.value?.data ?? []).map((item) => item["region-name"]), compartments: (compartments.value?.data ?? []).map((item) => ({ name: item.name, id: item.id })), instances };
+    oracle = { status: tenancyReading.status, tenancyIdentity, objectStorage: {
+      status: namespace ? "observed" : "unavailable",
+      namespaceObserved: Boolean(namespace), buckets }, tenancyName: tenancyReading.value?.data?.name, configuredRegion: region, profiles, subscribedRegions: (regions.value?.data ?? []).map((item) => item["region-name"]), compartments: (compartments.value?.data ?? []).map((item) => ({ name: item.name, id: item.id })), instances };
   }
 
   // Cloudflare's Workers Builds API (2026-09) requires a *user-scoped*
@@ -118,7 +154,8 @@ export async function observeComputeResources() {
   const cfAccount = process.env.CLOUDFLARE_ACCOUNT_ID;
   const cfRouteToken = Boolean(process.env.CLOUDFLARE_API_TOKEN);
   const cfBuildUserToken = Boolean(process.env.CLOUDFLARE_WORKERS_CI_USER_TOKEN);
-  if (cfAccount && (cfRouteToken || cfBuildUserToken)) {
+  const cfR2ReadToken = Boolean(process.env.CLOUDFLARE_R2_READ_TOKEN);
+  if (cfAccount && (cfRouteToken || cfBuildUserToken || cfR2ReadToken)) {
     let workersBuildMinutes = { status: "unavailable", reason: "user-scoped-ci-token-unavailable" };
     try {
       const provider = await import("@red-cup-engineering/cloudflare-services-section/derive-cloudflare-account-inventory");
@@ -133,20 +170,34 @@ export async function observeComputeResources() {
             : { status: "unavailable", reason: allowance.code ?? "unknown-refusal" };
         } catch { workersBuildMinutes = { status: "unavailable", reason: "native-build-observation-failed" }; }
       }
+      let r2Buckets = {status:"unavailable",reason:"R2-read-custody-unavailable"};
+      if(cfR2ReadToken && typeof provider.observeCloudflareR2Buckets === "function"){
+        try{
+          const reading = await provider.observeCloudflareR2Buckets({
+            accountId:cfAccount,tokenEnvironmentVariable:"CLOUDFLARE_R2_READ_TOKEN",
+          });
+          r2Buckets = reading.type === "CloudflareR2BucketObservation"
+            ? {status:"observed",observedAt:reading.observedAt,coverage:reading.coverage,
+                buckets:reading.buckets,objectInventory:"unobserved",rightsToResell:"unverified"}
+            : {status:"unavailable",reason:reading.code ?? "provider-refusal"};
+        }catch{r2Buckets={status:"unavailable",reason:"native-r2-read-failed"};}
+      }
       if (cfRouteToken) {
         const reading = await provider.deriveCloudflareAccountInventory({
           accountId: cfAccount, tokenEnvironmentVariable: "CLOUDFLARE_API_TOKEN",
         });
         cloudflare = reading.type === "CloudflareAccountInventory" ? {
-          status: "observed", accountId: reading.accountId, counts: reading.counts, workersBuildMinutes,
+          status: "observed", accountId: reading.accountId, counts: reading.counts, workersBuildMinutes, r2Buckets,
           zones: reading.zones.map(zone => ({ name: zone.name, status: zone.status,
             destinations: zone.records.filter(record => ["A", "AAAA", "CNAME"].includes(record.type))
               .map(record => ({ type: record.type, name: record.name, content: record.content, proxied: record.proxied })) })),
           workers: reading.workers.map(worker => ({ name: worker.id, modifiedOn: worker.modifiedOn })),
           customDomains: reading.customDomains.map(domain =>
             ({ hostname: domain.hostname, service: domain.service, zoneName: domain.zoneName })),
-        } : { status: "unavailable", reason: reading.code, workersBuildMinutes };
-      } else cloudflare = { status: "inventory-credential-unavailable", workersBuildMinutes };
+        } : { status: "unavailable", reason: reading.code, workersBuildMinutes, r2Buckets,
+          ...(r2Buckets.status==="observed"?{accountId:cfAccount}:{}) };
+      } else cloudflare = { status: "inventory-credential-unavailable", workersBuildMinutes, r2Buckets,
+        ...(r2Buckets.status==="observed"?{accountId:cfAccount}:{}) };
     } catch {
       cloudflare = { status: "unavailable", reason: "reader-failed", workersBuildMinutes };
     }

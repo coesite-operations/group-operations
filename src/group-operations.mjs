@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { jsonRepr } from "@red-cup-engineering/http-services-section/representation";
 import { guardOperators, isOperator } from "@red-cup-engineering/metroplat-operations-console/people";
 import { currentPeerEvidence } from "./peer-evidence.mjs";
+import { projectCloudResourceClaims } from "./cloud-resource-claims.mjs";
 
 export const COMPUTE_OBJECT_KIND = "561-group.compute-resource-observation.v1";
 const validComputeRecord = (record) => record?.kind === "compute-resource-observation"
@@ -63,7 +64,23 @@ export function groupOperations({ config, configuration = {} }) {
           return jsonRepr({ error: "compute_inventory_invalid" }, { status: 502, cacheControl: { noStore: true } });
         }
         if (record === null) return jsonRepr({ error: "compute_inventory_unavailable", reason: "No admitted observation from the author instance" }, { status: 503, cacheControl: { noStore: true } });
-        return jsonRepr(record, { cacheControl: { noStore: true } });
+        return jsonRepr({ ...record, resourcePredications: projectCloudResourceClaims(record) }, { cacheControl: { noStore: true } });
+      },
+    },
+    {
+      id: "ops-control-plane.compute-resource-cells",
+      match: "/compute/resources",
+      methods: ["GET"],
+      produces: ["application/json"],
+      handler: () => {
+        let record;
+        try { record=readCompute(); }
+        catch { return jsonRepr({error:"compute_resource_evidence_unavailable"},
+          {status:503,cacheControl:{noStore:true}}); }
+        if(record===null)return jsonRepr({error:"compute_resource_evidence_unavailable"},
+          {status:503,cacheControl:{noStore:true}});
+        return jsonRepr(projectCloudResourceClaims(record),
+          {cacheControl:{noStore:true}});
       },
     },
   ];
@@ -77,7 +94,7 @@ export function groupOperations({ config, configuration = {} }) {
       if (!mayReadCompute(context)) throw new Error("compute resources require an operator");
       const record = readCompute();
       if (record === null) throw new Error("No admitted compute observation from the author instance");
-      return record;
+      return { ...record, resourcePredications: projectCloudResourceClaims(record) };
     },
   })];
   return { tools, applications: [guardOperators({ resources }, () => true, {
