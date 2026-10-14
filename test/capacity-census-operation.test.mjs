@@ -217,7 +217,7 @@ test('authenticated census matching increases feasible simultaneous office cover
     verifyGroupReceipt:async()=>true,
   });
   assert.equal(result.providerEvidence,'NATIVE_VERIFIED');
-  assert.equal(result.matchingPressure.state,'MAXIMAL_MATCHING');
+  assert.equal(result.matchingPressure.state,'MAXIMUM_MATCHING');
   assert.equal(result.matchingPressure.matchedCount,2);
   assert.equal(result.matchingPressure.executionAuthorized,false);
   assert.equal(result.matchingPressure.independentReceivingClaimAllowed,false);
