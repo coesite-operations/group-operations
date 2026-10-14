@@ -3,7 +3,8 @@
     "group-produce-financial-readout": "scripts/produce-group-financial-readout.mjs",
     "group-reconcile-books-with-chain": "scripts/reconcile-books-with-chain.mjs",
     "group-receive-x402-seller-payments": "scripts/receive-x402-seller-payments.mjs",
-    "group-requirements": "scripts/requirements.mjs"
+    "group-requirements": "scripts/requirements.mjs",
+    "group-forecast-capacity-flow": "scripts/forecast-capacity-flow.mjs"
   },
   "dependencies": {
     "@red-cup-engineering/activitypub-services-section": "workspace:*",
@@ -38,7 +39,8 @@
     "@red-cup-engineering/signcell": "workspace:*",
     "@red-cup-engineering/computer-content-address-engineering-services-section": "workspace:*",
     "@red-cup-engineering/computer-content-engineering-services-section": "workspace:*",
-    "@red-cup-engineering/computer-data-engineering-services-section": "workspace:*"
+    "@red-cup-engineering/computer-data-engineering-services-section": "workspace:*",
+    "@red-cup-engineering/computer-system-platform": "workspace:*"
   },
   "exports": {
     ".": "./src/group-operations.mjs",
@@ -65,7 +67,8 @@
     "./primary-health": "./src/primary-health.mjs",
     "./requirement-types": "./src/requirement-types.mjs",
     "./requirement-rules": "./src/requirement-rules.mjs",
-    "./capacity-census-operation": "./src/capacity-census-operation.mjs"
+    "./capacity-census-operation": "./src/capacity-census-operation.mjs",
+    "./capacity-flow-operation": "./src/capacity-flow-operation.mjs"
   },
   "name": "@561-group/group-operations",
   "private": true,
@@ -75,6 +78,7 @@
     "@red-cup-engineering/gaming": "workspace:*"
   },
   "scripts": {
-    "test:node-jobs": "node --test --test-isolation=none test/node-job-instance.test.mjs test/node-job-binding.test.mjs test/node-job-operation.test.mjs test/node-job-execution.test.mjs"
+    "test:node-jobs": "node --test --test-isolation=none test/node-job-instance.test.mjs test/node-job-binding.test.mjs test/node-job-operation.test.mjs test/node-job-execution.test.mjs",
+    "test:capacity-flow": "node --test test/capacity-flow-operation.test.mjs"
   }
 }
