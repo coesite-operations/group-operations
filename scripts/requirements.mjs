@@ -29,9 +29,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { REQUIREMENT, RULING, readGoverning, recordGoverning, requirementOf, rulingOf } from "../src/requirement-cells.mjs";
-import { carryToJuly, julyRequirementOf, julyRulingOf, uncarried } from "../src/requirement-july.mjs";
+import { carryToJuly, julyRequirementOf, julyRequirementPathAt, julyRulingOf, requirementSectionAt, uncarried } from "../src/requirement-july.mjs";
 import { readPools, writeJuly } from "../src/requirement-pools.mjs";
-import { REQUIREMENT_SECTION } from "../src/requirement-cells.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { maintainRequirements } from "../src/requirement-maintenance.mjs";
 import { pullRequestOrder } from "../src/requirement-orders.mjs";
@@ -62,7 +61,7 @@ try {
       const at = new Date().toISOString();
       const { body } = requirementOf(JSON.parse(stdin()));
       const record = julyRequirementOf({ body, recordedAt: at, signature: { seat: seat() } }, { seat: seat() });
-      print(writeJuly({ repositoryRoot: repositoryRoot(), kind: "requirement", record, path: `${body.section}/content/requirements/${body.id}.json`, seat: seat(), at }));
+      print(writeJuly({ repositoryRoot: repositoryRoot(), kind: "requirement", record, path: julyRequirementPathAt(repositoryRoot(), body.section, body.id), seat: seat(), at }));
       break;
     }
     case "record-requirement-journal":
@@ -73,8 +72,8 @@ try {
       const at = new Date().toISOString();
       const { body } = rulingOf(JSON.parse(stdin()));
       const { decision, ruling } = julyRulingOf({ body, recordedAt: at, signature: { seat: seat() } });
-      print([writeJuly({ repositoryRoot: repositoryRoot(), kind: "decision-record", record: decision, path: `${REQUIREMENT_SECTION}/content/decision-records/${decision.id}.json`, seat: seat(), at }),
-        writeJuly({ repositoryRoot: repositoryRoot(), kind: "ruling", record: ruling, path: `${REQUIREMENT_SECTION}/content/rulings/${ruling.id}.json`, seat: seat(), at })]);
+      print([writeJuly({ repositoryRoot: repositoryRoot(), kind: "decision-record", record: decision, path: `${requirementSectionAt(repositoryRoot())}/content/decision-records/${decision.id}.json`, seat: seat(), at }),
+        writeJuly({ repositoryRoot: repositoryRoot(), kind: "ruling", record: ruling, path: `${requirementSectionAt(repositoryRoot())}/content/rulings/${ruling.id}.json`, seat: seat(), at })]);
       break;
     }
     case "read": {

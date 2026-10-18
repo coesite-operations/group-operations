@@ -17,7 +17,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { JULY_SCHEMA_DIRECTORY, addressHolds, julyAttestationOf, julyRequirementOf, julyTypes } from "./requirement-july.mjs";
+import { addressHolds, julyAttestationOf, julyRequirementOf, julySchemaDirectoryAt, julyTypes, requirementSectionAt } from "./requirement-july.mjs";
 import { readPools, writeJuly } from "./requirement-pools.mjs";
 import { createHash } from "node:crypto";
 import { cell } from "@red-cup-engineering/signcell/cell";
@@ -91,13 +91,14 @@ export function baselineOf({ repositoryRoot, rule, scratch }) {
 }
 
 /** DRC-4: record files that are plain JSON, not a SignCell typed mark of their July schema (requirement records and data/records). */
-export function plainRecordFiles(repositoryRoot, { schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY) } = {}) {
+export function plainRecordFiles(repositoryRoot, { schemaDirectory = julySchemaDirectoryAt(repositoryRoot) } = {}) {
   const types = existsSync(schemaDirectory) ? julyTypes(schemaDirectory) : undefined;
   const addressedRecord = (path) => {
     if (types === undefined) return false;
     try { return addressHolds(types, JSON.parse(readFileSync(join(repositoryRoot, path), "utf8"))); } catch { return false; }
   };
-  return git(repositoryRoot, "ls-files", "-z", "--", ":(glob)lib/**/content/requirements/*.json", ":(glob)lib/**/data/records/**/*.json")
+  return git(repositoryRoot, "ls-files", "-z", "--", ":(glob)lib/**/content/requirements/*.json", ":(glob)lib/**/data/records/**/*.json",
+    ":(glob)content/requirements/*.json", ":(glob)services/**/content/requirements/*.json", ":(glob)services/**/data/records/**/*.json")
     .split("\0").filter(Boolean).filter((path) => !/\/(legacy|_archive|node_modules)\//u.test(path) && !/\/schema\//u.test(path) && !addressedRecord(path));
 }
 
@@ -138,7 +139,7 @@ export function recordAssemblyBreakJuly({ repositoryRoot, input, seat, at = new 
   body.id = input.id ?? `${body.at.slice(0, 10)}-${createHash("sha256").update(JSON.stringify(body.evidence)).digest("hex").slice(0, 12)}`;
   const options = { repositoryRoot, seat, keyDirectory, at, ...(schemaDirectory ? { schemaDirectory } : {}) };
   const attestation = julyAttestationOf({ body, recordedAt: at, signature: { seat } });
-  writeJuly({ ...options, kind: "quality-attestation", record: attestation, path: `${REQUIREMENT_SECTION}/content/quality-attestations/${attestation.id}.json` });
+  writeJuly({ ...options, kind: "quality-attestation", record: attestation, path: `${requirementSectionAt(repositoryRoot)}/content/quality-attestations/${attestation.id}.json` });
   const pools = readPools({ repositoryRoot, ...(schemaDirectory ? { schemaDirectory } : {}) });
   const occurrences = pools.attestations.filter(({ record }) => record["x-provenance"]?.["break-class"] === body.breakClass).length;
   const requirementId = reArchitectureIdOf(body.breakClass);

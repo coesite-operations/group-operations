@@ -10,10 +10,10 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { signContentClaim, verifyContentClaim } from "@red-cup-engineering/computer-content-engineering-services-section/signed-content-claim";
 import { REQUIREMENT_SECTION, existenceOnly, seatKey } from "./requirement-cells.mjs";
-import { JULY_SCHEMA_DIRECTORY, addressHolds, addressed, julyTypes } from "./requirement-july.mjs";
+import { addressHolds, addressed, julySchemaDirectoryAt, julyTypes } from "./requirement-july.mjs";
 
 const MEDIA = "text/plain";
 const PURPOSE = "561-group.july-record-attestation.v1";
@@ -26,13 +26,18 @@ const git = (root, ...args) => execFileSync("git", ["-C", root, ...args], { enco
  */
 export function julyPoolFiles(repositoryRoot, { recurse = false } = {}) {
   const pathspecs = [":(glob)lib/**/content/requirements/*.json",
+    ":(glob)content/requirements/*.json",
+    ":(glob)services/**/content/requirements/*.json",
+    ":(glob)services/requirement-management-operation-services-section/content/rulings/*.json",
+    ":(glob)services/requirement-management-operation-services-section/content/decision-records/*.json",
+    ":(glob)services/requirement-management-operation-services-section/content/quality-attestations/*.json",
     `:(glob)${REQUIREMENT_SECTION}/content/rulings/*.json`,
     `:(glob)${REQUIREMENT_SECTION}/content/decision-records/*.json`,
     `:(glob)${REQUIREMENT_SECTION}/content/quality-attestations/*.json`];
   const list = (...args) => git(repositoryRoot, "ls-files", ...args, "-z", "--", ...pathspecs).split("\0").filter(Boolean);
   const listed = [...new Set([...list("-co", "--exclude-standard"), ...(recurse ? list("--recurse-submodules") : [])])]
     .filter((path) => !/\/(legacy|_archive|node_modules)\//u.test(path));
-  const kind = (path) => path.match(/\/content\/(requirements|rulings|decision-records|quality-attestations)\//u)?.[1];
+  const kind = (path) => path.match(/(?:^|\/)content\/(requirements|rulings|decision-records|quality-attestations)\//u)?.[1];
   return Object.freeze(Object.groupBy(listed, kind));
 }
 
@@ -52,7 +57,7 @@ export function attestationHolds(record) {
   return result.ok ? result.issuer : false;
 }
 
-const sectionOf = (path) => dirname(dirname(dirname(path)));
+const sectionOf = (path) => path.startsWith("content/requirements/") ? "services/operations-services-section" : dirname(dirname(dirname(path)));
 const told = (sources = []) => ({ for: sources.length > 0, against: sources.some((source) => source.relayed) });
 const chargeOf = ({ for: forSide, against }) => (forSide && against ? "contested" : forSide ? "held" : against ? "denied" : "unknown");
 
@@ -90,7 +95,7 @@ function rulingOf(path, record, decisions) {
  * Every July requirement, ruling and attestation under a repository whose address holds, and every
  * record refused (no address, an address that does not hold, or an attestation that does not).
  */
-export function readPools({ repositoryRoot, schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY) }) {
+export function readPools({ repositoryRoot, schemaDirectory = julySchemaDirectoryAt(repositoryRoot) }) {
   const root = resolve(repositoryRoot);
   const types = julyTypes(schemaDirectory);
   // Requirements in mounted section repositories are read (and refused until addressed) like any other.
@@ -115,12 +120,14 @@ export function readPools({ repositoryRoot, schemaDirectory = join(repositoryRoo
 }
 
 /** Write a July record as an addressed typed mark, attested by `seat`. */
-export function writeJuly({ repositoryRoot, schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY), kind, record, path, seat, keyDirectory, at = new Date().toISOString() }) {
+export function writeJuly({ repositoryRoot, schemaDirectory = julySchemaDirectoryAt(repositoryRoot), kind, record, path, seat, keyDirectory, at = new Date().toISOString() }) {
   const types = julyTypes(schemaDirectory);
   const key = seatKey(seat, { directory: keyDirectory });
   const withProvenance = { ...record, "x-provenance": { "recorded-by": seat, "recorded-on": at.slice(0, 10), ...(record["x-provenance"] ?? {}) } };
-  const target = join(resolve(repositoryRoot), path);
-  if (!target.startsWith(resolve(repositoryRoot))) throw new TypeError("path must lie inside the repository");
+  const root = resolve(repositoryRoot);
+  const target = resolve(root, path);
+  const inside = relative(root, target);
+  if (!inside || inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) throw new TypeError("path must lie inside the repository");
   const existed = existsSync(target);
   // A record rewritten in place keeps the journal cell it was carried from, so the carry stays proven.
   const priorCell = existed ? JSON.parse(readFileSync(target, "utf8"))?.["x-provenance"]?.["sign-cell"]?.cell : undefined;

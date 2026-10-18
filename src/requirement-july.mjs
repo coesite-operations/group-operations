@@ -32,6 +32,26 @@ import { julyPoolFiles } from "./requirement-pools.mjs";
  * and quality-attestation schemas materialized byte for byte from the 2026-08-03 executive office.
  */
 export const JULY_SCHEMA_DIRECTORY = `${REQUIREMENT_SECTION}/data/records/schema`;
+/** Native source-owned Coesite layout, without changing historical journal identity. */
+export const CURRENT_REQUIREMENT_SECTION = "services/requirement-management-operation-services-section";
+export function requirementSectionAt(repositoryRoot) {
+  return existsSync(join(resolve(repositoryRoot), CURRENT_REQUIREMENT_SECTION))
+    ? CURRENT_REQUIREMENT_SECTION : REQUIREMENT_SECTION;
+}
+/** Fail closed on an incomplete source-owned schema set; never use test fixtures in production. */
+export function julySchemaDirectoryAt(repositoryRoot) {
+  const section = requirementSectionAt(repositoryRoot);
+  return join(resolve(repositoryRoot), section === CURRENT_REQUIREMENT_SECTION
+    ? `${section}/schemas` : JULY_SCHEMA_DIRECTORY);
+}
+/** Map a source-owned section's identity to the real pool path without inventing another store. */
+export function julyRequirementPathAt(repositoryRoot, section, id) {
+  if (requirementSectionAt(repositoryRoot) === CURRENT_REQUIREMENT_SECTION) {
+    if (section === "services/operations-services-section") return `content/requirements/${id}.json`;
+    if (section === REQUIREMENT_SECTION) return `${CURRENT_REQUIREMENT_SECTION}/content/requirements/${id}.json`;
+  }
+  return `${section}/content/requirements/${id}.json`;
+}
 /** The team's office: the July requirements management team. */
 export const TEAM_OFFICE = "requirements-management-team";
 const KINDS = Object.freeze(["requirement", "ruling", "decision-record", "quality-attestation"]);
@@ -188,10 +208,10 @@ export function lostFrom(original, carried) {
  * Carry every journal requirement, ruling and assembly break into the July pools as addressed
  * typed marks. Returns what was written and every record that could not be carried.
  */
-export function carryToJuly({ repositoryRoot, schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY), seat, scratch }) {
+export function carryToJuly({ repositoryRoot, schemaDirectory = julySchemaDirectoryAt(repositoryRoot), seat, scratch }) {
   const root = resolve(repositoryRoot);
   const types = julyTypes(schemaDirectory);
-  const pool = (name) => join(root, REQUIREMENT_SECTION, "content", name);
+  const pool = (name) => join(root, requirementSectionAt(root), "content", name);
   const carried = { requirements: [], rulings: [], decisions: [], attestations: [] };
   const refused = [];
   const attempt = (what, run) => { try { run(); } catch (error) { refused.push({ record: what, reason: error.message }); } };
@@ -218,7 +238,7 @@ export function carryToJuly({ repositoryRoot, schemaDirectory = join(repositoryR
   for (const read of readGoverning({ repositoryRoot: root, kind: REQUIREMENT, scratch }).records) {
     attempt(`requirement:${read.body.id}`, () => {
       const held = read.body.carriedFrom ? join(root, read.body.carriedFrom) : undefined;
-      const path = held && existsSync(held) ? held : join(root, read.body.section, "content", "requirements", `${read.body.id}.json`);
+      const path = held && existsSync(held) ? held : join(root, julyRequirementPathAt(root, read.body.section, read.body.id));
       // A record already in the July form keeps its content; a journal-only one is written in it.
       carryRequirement(path, read);
     });
@@ -255,7 +275,7 @@ export function carryToJuly({ repositoryRoot, schemaDirectory = join(repositoryR
  * pools whose address holds and whose sign-cell names the journal cell it was carried from. Empty
  * is the proof the journals may be retired; until then nothing is removed.
  */
-export function uncarried({ repositoryRoot, schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY), scratch }) {
+export function uncarried({ repositoryRoot, schemaDirectory = julySchemaDirectoryAt(repositoryRoot), scratch }) {
   const root = resolve(repositoryRoot);
   const types = julyTypes(schemaDirectory);
   const carriedCells = new Set(Object.values(julyPoolFiles(root)).flat().flatMap((path) => {
@@ -272,7 +292,7 @@ export function uncarried({ repositoryRoot, schemaDirectory = join(repositoryRoo
 }
 
 /** Every July record in the team's pools and the requirement pools, with whether its address holds. */
-export function readJuly({ repositoryRoot, schemaDirectory = join(repositoryRoot, JULY_SCHEMA_DIRECTORY), files }) {
+export function readJuly({ repositoryRoot, schemaDirectory = julySchemaDirectoryAt(repositoryRoot), files }) {
   const types = julyTypes(schemaDirectory);
   return files.map((path) => {
     const record = JSON.parse(readFileSync(join(repositoryRoot, path), "utf8"));

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -344,5 +344,54 @@ test("a break class attested twice in the July pools files its re-architecture r
     const filed = pools.requirements.find((read) => read.body.id === reArchitectureIdOf("divergent-copy"));
     assert.ok(filed);
     assert.equal(filed.signature.seat, SEAT);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
+});
+
+test("the current Coesite source-owned JSON pools bind real reads and writes without reviving legacy paths", () => {
+  const { root, keys } = repository();
+  const section = "services/requirement-management-operation-services-section";
+  const stamp = { "recorded-by": SEAT, "recorded-on": "2026-10-18" };
+  const makeRequirement = id => ({
+    id, name: id, kind: "requirement", "raised-by": "emsenn", asks: "a requirement remains measurable",
+    "met-when": [{ cell: `${id}:runs`, target: "held", command: "true", "expected-exit": 0 }],
+    "x-provenance": stamp,
+  });
+  const sourceFile = "content/requirements/owner-root.json";
+  const teamFile = `${section}/content/requirements/team-owned.json`;
+  try {
+    mkdirSync(join(root, section, "schemas"), { recursive: true });
+    for (const kind of ["requirement", "ruling", "decision-record", "quality-attestation"])
+      copyFileSync(join(SCHEMAS, `${kind}.schema.json`), join(root, section, "schemas", `${kind}.schema.json`));
+    writeJuly({ repositoryRoot: root, kind: "requirement", path: sourceFile, record: makeRequirement("owner-root"), seat: SEAT, keyDirectory: keys });
+    writeJuly({ repositoryRoot: root, kind: "requirement", path: teamFile, record: makeRequirement("team-owned"), seat: SEAT, keyDirectory: keys });
+    const decision = {
+      id: "current-decision", name: "Current decision", decider: "emsenn", status: "decided",
+      context: "A decision is required", options: [
+        { label: "use", description: "Use the original pool" },
+        { label: "ignore", description: "Ignore the original pool" }
+      ], decision: "Use the original pool", consequences: "Existing source controls the reader",
+      "x-provenance": stamp,
+    };
+    writeJuly({ repositoryRoot: root, kind: "decision-record", path: `${section}/content/decision-records/current-decision.json`, record: decision, seat: SEAT, keyDirectory: keys });
+    writeJuly({ repositoryRoot: root, kind: "ruling", path: `${section}/content/rulings/current-ruling.json`,
+      record: { id: "current-ruling", name: "Current ruling", backs: "current-decision", decider: "emsenn",
+        "carried-by": "requirements-management-team", quote: "Use the original pool", channel: "test-source",
+        "ruled-on": "2026-10-18", "x-provenance": stamp }, seat: SEAT, keyDirectory: keys });
+    const pools = readPools({ repositoryRoot: root });
+    assert.deepEqual(pools.refused, []);
+    assert.deepEqual(pools.requirements.map(item => item.body.id), ["owner-root", "team-owned"]);
+    assert.equal(pools.requirements[0].body.section, "services/operations-services-section");
+    assert.equal(pools.rulings.length, 1);
+    assert.equal(pools.rulings[0].body.ruling, "Use the original pool");
+    assert.equal(pools.attestations.length, 0);
+    assert.equal(existsSync(join(root, "lib/emsenn")), true); // historical test carrier untouched
+    const forged = JSON.parse(readFileSync(join(root, sourceFile), "utf8"));
+    writeFileSync(join(root, sourceFile), JSON.stringify({ ...forged, asks: "tampered after signing" }));
+    const refused = readPools({ repositoryRoot: root });
+    assert.deepEqual(refused.requirements.map(item => item.body.id), ["team-owned"]);
+    assert.deepEqual(refused.refused.map(item => item.path), [sourceFile]);
+    assert.throws(() => writeJuly({ repositoryRoot: root, kind: "requirement",
+      path: "../escaped-owner-root.json", record: makeRequirement("escaped-owner-root"), seat: SEAT, keyDirectory: keys }), /path must lie inside/u);
+    assert.equal(existsSync(join(root, "..", "escaped-owner-root.json")), false);
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
 });
