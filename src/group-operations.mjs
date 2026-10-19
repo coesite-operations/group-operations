@@ -5,6 +5,7 @@ import { guardOperators, isOperator } from "@red-cup-engineering/metroplat-opera
 import { currentPeerEvidence } from "./peer-evidence.mjs";
 import { projectCloudResourceClaims } from "./cloud-resource-claims.mjs";
 import { readCloudResource } from "./cloud-resource-receiving.mjs";
+import { readGroupResourceFlows } from "./group-resource-flows.mjs";
 
 export const COMPUTE_OBJECT_KIND = "561-group.compute-resource-observation.v1";
 const validComputeRecord = (record) => record?.kind === "compute-resource-observation"
@@ -39,6 +40,7 @@ export function groupOperations({ config, configuration = {} }) {
   const navigation = Object.assign([
     { href: "/play", label: "Play" }, { href: "/tasks/view", label: "Work" },
     { href: "/books/group-readout", label: "Daily readout" },
+    { href: "/books/resource-flows", label: "Resource flows" },
     { href: "/businesses/summary", label: "Businesses" }, { href: "/compute", label: "Compute" },
   ], { title: configuration.label ?? "Group" });
   const authorActor = configuration.computeAuthorActor;
@@ -85,7 +87,19 @@ export function groupOperations({ config, configuration = {} }) {
       },
     },
   ];
-  const tools = [Object.freeze({
+    // Read the original source-owned accounting engines on demand; do not
+    // persist a second ledger of four redundant time-window aggregates.
+    resources.push({
+      id:"group-resource-flows.daily",
+      match:"/books/resource-flows",
+      methods:["GET"],produces:["application/json"],
+      handler:async()=>{
+        const date=new Date().toISOString().slice(0,10);
+        const reading=await readGroupResourceFlows({date,resolution:"day"});
+        return jsonRepr(reading,{cacheControl:{noStore:true}});
+      }
+    });
+    const tools = [Object.freeze({
     name: "compute_resources",
     description: "Read the dated observations of Google Cloud, Oracle Cloud, Cloudflare, machines, and credential locations before selecting compute for work.",
     inputSchema: { type: "object", additionalProperties: false },
@@ -124,7 +138,20 @@ export function groupOperations({ config, configuration = {} }) {
             sourceCommitment:facts.sourceCommitment,observation:facts.rows[index]};
     },
   })];
-  return { tools, applications: [guardOperators({ resources }, () => true, {
+  tools.push(Object.freeze({
+    name:"resource_flows",
+    description:"Read exact UTC second/minute/hour/day resource flows from the Group's original money journal and inference event store; missing physical host meters are explicit.",
+    inputSchema:{type:"object",required:["date"],additionalProperties:false,
+      properties:{date:{type:"string"},resolution:{enum:["second","minute","hour","day"]},
+        account:{type:"string"}}},
+    annotations:{readOnlyHint:true,idempotentHint:true,openWorldHint:false},
+    visible:mayReadCompute,
+    handler:async(input,context)=>{
+      if(!mayReadCompute(context))throw new Error("resource flows require an operator");
+      return readGroupResourceFlows(input);
+    }
+  }));
+    return { tools, applications: [guardOperators({ resources }, () => true, {
     stateDir: config.stateDir, allowedEmail: config.allowedEmail,
     navigation, navigationTitle: navigation.title,
   })] };

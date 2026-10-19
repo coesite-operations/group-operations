@@ -68,7 +68,8 @@
     "./requirement-types": "./src/requirement-types.mjs",
     "./requirement-rules": "./src/requirement-rules.mjs",
     "./capacity-census-operation": "./src/capacity-census-operation.mjs",
-    "./capacity-flow-operation": "./src/capacity-flow-operation.mjs"
+    "./capacity-flow-operation": "./src/capacity-flow-operation.mjs",
+    "./group-resource-flows": "./src/group-resource-flows.mjs"
   },
   "name": "@561-group/group-operations",
   "private": true,
