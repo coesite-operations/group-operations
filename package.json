@@ -83,5 +83,9 @@
     "test:capacity-flow": "node --test test/capacity-flow-operation.test.mjs",
     "test:requirements": "node --test test/requirement-cells.test.mjs test/requirement-satisfaction.test.mjs",
     "plan:operating-cell": "plan-operating-cell"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coesite-operations/group-operations.git"
   }
 }
