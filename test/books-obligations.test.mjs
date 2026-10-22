@@ -58,6 +58,30 @@ test("emsenn ownership needs no fictional custody ruling, and a forged books ans
   assert.equal(JSON.parse(readFileSync(registryPath, "utf8")).wallets[0].owner, "founder");
 });
 
+test("native books honor GROUP_WALLET_REGISTRY instead of silently reading another checkout", () => {
+  const root = mkdtempSync(join(tmpdir(), "wallet-registry-source-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "original-wallet-registry.json");
+  writeFileSync(ledgerPath, ledger);
+  writeFileSync(registryPath, JSON.stringify({ wallets: [{ address: OWN, owner: "founder" }] }));
+  const books = booksObligations({
+    accountHolder: "emsenn",
+    env: {
+      METROPLAT_LEDGER_JOURNAL: ledgerPath,
+      GROUP_WALLET_REGISTRY: registryPath,
+      METROPLAT_WEB_DATA_DIR: join(root, "web"),
+    },
+  });
+  const due = books.obligations();
+  assert.equal(due.length, 1);
+  const { memo } = books.start(due[0].id);
+  assert.deepEqual(memo.sales, ["evm:own"]);
+  assert.deepEqual(memo.handed, ["evm:stranger"]);
+  assert.throws(() => booksObligations({
+    accountHolder: "emsenn", env: { GROUP_WALLET_REGISTRY: "   " },
+  }), /nonempty path/);
+});
+
 test("custodian approval defers payment-derived income while preserving cash and transfer identities", async () => {
   const root = mkdtempSync(join(tmpdir(), "books-"));
   const ledgerPath = join(root, "lib/emsenn/services/561-group/services/561-group-services-section/data/logs/ledgers/561-group-main-ledger.beancount");
