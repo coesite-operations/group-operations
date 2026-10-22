@@ -80,15 +80,16 @@ export function x402SalesOf(ledgerText, registry) {
 export const selfPaidSalesOf = (ledgerText, registry) => x402SalesOf(ledgerText, registry).filter((sale) => sale.selfPaid);
 
 /**
- * Wallets the books and the registry disagree about: an address the authored ledger holds in the
- * Group's custody (an `Assets:…:Custody:` account's note naming it) that the key-management registry
- * says is the founder's. Each is `{address, ledgerAccount, registryOwner}`.
+ * Compatibility query for historical legal-owner disputes. An accounting
+ * posting to Assets:...:Custody is an operational record, not evidence that
+ * someone other than emsenn legally owns the wallet. The "founder" and "org"
+ * labels both belong to emsenn's 561 Group agent-swarm economic perimeter.
+ * Without independent, explicit conflicting title evidence there is no
+ * reportable legal-owner disagreement. Preserve original wallet registry
+ * labels; do not demand a false binary ownership correction.
  */
-export function custodyDisagreementsOf(ledgerText, registry) {
-  const owners = new Map((registry?.wallets ?? []).map((wallet) => [String(wallet.address).toLowerCase(), wallet.owner]));
-  const held = [...ledgerText.matchAll(/^\d{4}-\d\d-\d\d note (Assets:[^\s]*Custody[^\s]*) "EVM address (0x[0-9a-fA-F]{40})"/gmu)];
-  return held.flatMap(([, ledgerAccount, address]) => owners.get(address.toLowerCase()) === "founder"
-    ? [Object.freeze({ address, ledgerAccount, registryOwner: "founder" })] : []);
+export function custodyDisagreementsOf(_ledgerText, _registry) {
+  return [];
 }
 
 /** A custodian-approved reclassification of legacy payment-derived income.
