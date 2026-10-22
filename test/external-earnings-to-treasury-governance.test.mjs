@@ -87,10 +87,10 @@ test("even an apparently complete evidence packet cannot manufacture funds or tr
 
 test("the staged economic contract differentiates payment, settlement, investable cash and return", () => {
   const effect = id => campaign.stages.find(s => s.id === id).effect;
-  assert.match(effect("qualify-source-and-attribution"), /self-payments/);
+  assert.match(effect("qualify-source-and-attribution"), /self-purchases/);
   assert.match(effect("receive-service-performance"), /independently receive/i);
   assert.match(effect("qualify-processor-payment"), /duplicate/);
-  assert.match(effect("receive-bank-settlement"), /bank\/qualified-custodian arrival/);
+  assert.match(effect("receive-bank-settlement"), /bank\/custodian-settled money/);
   assert.match(effect("reconcile-authored-books"), /Farolfi/);
   assert.match(effect("reserve-and-restrict-capital"), /runway/);
   assert.match(effect("assay-investable-surplus"), /demonstrably available emsenn-owned funds/);
