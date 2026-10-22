@@ -1,7 +1,7 @@
 {
   "schemaVersion": "operations-campaign-library.v1",
   "provider": "coesite-operations",
-  "revision": "2026-10-21",
+  "revision": "2026-10-22",
   "campaigns": [
     {
       "id": "form-operating-cell",
@@ -310,6 +310,114 @@
       ],
       "completion": "At least one independently evidenced correctly authorized source-qualified campaign placement or publication contributes to a measured beneficiary/eligible audience receiving condition; customer and finance outcomes are observed separately, and all required withdrawal/rights gates remain valid.",
       "kill": "Offer is withdrawn or disproved; original publisher revokes channel authority; data/privacy or source rights fail; elapsed window/beneficiary no longer warrants distribution; retain and discharge committed obligations separately."
+    },
+    {
+      "id": "reconcile-external-earnings-to-treasury",
+      "endeavorRole": "treasury",
+      "parameters": [
+        "work_ref",
+        "principal",
+        "consumer",
+        "service_id",
+        "office_bundle",
+        "acceptance_test",
+        "buyer_ref",
+        "buyer_authority_ref",
+        "offer_terms_ref",
+        "provider_service_ref",
+        "delivered_work_ref",
+        "customer_acceptance_ref",
+        "merchant_legal_principal_ref",
+        "original_payment_ref",
+        "external_payer_ref",
+        "beneficial_owner_ref",
+        "payout_beneficiary_ref",
+        "processor_settlement_ref",
+        "bank_credit_ref",
+        "book_reconciliation_ref",
+        "reversal_dispute_ref",
+        "restricted_cash_ref",
+        "tax_refund_reserve_ref",
+        "operating_runway_ref",
+        "unrestricted_cash_ref",
+        "capital_uses_comparison_ref",
+        "investment_mandate_ref",
+        "investment_sleeve_ref",
+        "independent_approval_ref",
+        "destination_custody_ref",
+        "venue_authority_ref",
+        "transfer_receipt_ref",
+        "independent_assay_ref"
+      ],
+      "stages": [
+        {
+          "id": "identify-paid-demand",
+          "ownerOffice": "corporate-secretary",
+          "effect": "Recover the exact original outside buyer, priced offer, customer Work, seller, legal principal and accepted purchasing authority; catalog interest or internally originated demand is not an order or external revenue."
+        },
+        {
+          "id": "qualify-buyer-and-principal",
+          "ownerOffice": "corporate-secretary",
+          "effect": "Use original party ownership/beneficial-owner and identity evidence to distinguish unrelated outside payer, related-party transaction, internal Group self-payment, personal receipt and restricted beneficiary funds; preserve any unknown or contested classification."
+        },
+        {
+          "id": "receive-service-performance",
+          "ownerOffice": "quality-operations",
+          "effect": "Independently receive the supplier's delivery and the customer's explicit useful acceptance against the original terms; a payment alone, code deployment or provider's own green test does not constitute performed and accepted service."
+        },
+        {
+          "id": "qualify-processor-payment",
+          "ownerOffice": "treasury-operations",
+          "effect": "Read Stripe, x402 or other original qualified seller-event evidence with immutable provider event ID, currency, timestamp, source terms, payer and legal merchant; reject duplicate, self-paid, stale, disputed, unsupported and untraceable claims without constructing a shadow payment ledger."
+        },
+        {
+          "id": "receive-bank-settlement",
+          "ownerOffice": "treasury-operations",
+          "effect": "Corroborate payment processor settlement, payout beneficiary, custody account and bank/qualified-custodian arrival separately; net realized outside money is not established by invoice, chain movement, captured charge, processor pending balance or a receipt email."
+        },
+        {
+          "id": "reconcile-authored-books",
+          "ownerOffice": "accounting-operations",
+          "effect": "Read original Farolfi books and settlement witnesses; reconcile source IDs, denominations, fees, reversals, refund liabilities and book-recognition basis once, with observed contradictions and unmatched rows preserved. Ledger posting alone is not bank settlement."
+        },
+        {
+          "id": "reserve-and-restrict-capital",
+          "ownerOffice": "treasury-operations",
+          "effect": "Account for tax, refunds and chargebacks, wages, other binding liabilities, restrictions and explicitly approved operating/compute runway; exclude client, personal, escrow, grant-restricted and borrowed principal from unrestricted Group capital."
+        },
+        {
+          "id": "assay-investable-surplus",
+          "ownerOffice": "quality-operations",
+          "effect": "Require independently evidenced bank-settled unrestricted net cash owned by the 561 Group, with denomination and current custodian; refuse if authority, balances or expense coverage are unknown; prove proposed surplus is no greater than legally available reserves-adjusted cash."
+        },
+        {
+          "id": "compare-capital-uses",
+          "ownerOffice": "chief-financial-officer",
+          "effect": "Compare funding existing buyer-to-cash delivery, required metered compute and operating reserves against separately permitted investment sleeves on marginal net contribution, liquidity, concentration, downside and opportunity costs, not gross yield or fabricated ROI."
+        },
+        {
+          "id": "propose-bounded-allocation",
+          "ownerOffice": "chief-financial-officer",
+          "effect": "Produce an unsigned, non-executing exact allocation proposal naming the legal owner, source/destination custody, currency, amount, sleeve risk policy, liquidity floor, quote freshness, competent decision maker and original investment Work."
+        },
+        {
+          "id": "obtain-competent-authorization",
+          "ownerOffice": "corporate-secretary",
+          "effect": "Receive distinct currently competent corporate allocation approval, legal market/client-fund constraints, actual venue and signer grants and consent for precisely scoped effects. Being CFO, observing revenue or populating campaign parameters does not itself authorize a trade."
+        },
+        {
+          "id": "observe-authorized-execution",
+          "ownerOffice": "custody-operations",
+          "effect": "Only the separately authorized original custody/venue provider may transfer or invest within its mandate; independently observe its actual transfer, order, fill, fees and custody acknowledgments, preserving no-op/refusal when a gate fails. This campaign itself performs no asset move."
+        },
+        {
+          "id": "receive-and-reconcile",
+          "ownerOffice": "quality-operations",
+          "effect": "Independently assay buyer fulfillment, outside cash, reserved liquidity, treasury allocation, actual capital-at-risk and returns against original Work; reconcile in source-owned books, keeping investment P&L and transferred principal distinct from newly earned external customer cash."
+        }
+      ],
+      "completion": "One original outside sale is independently accepted and corroborated through payout, bank/custodian arrival and source-owned books; treasury separately receives either an authorized within-floor investment allocation receipt or an explicit refusal. No campaign binding by itself proves outside earnings, capital ownership, venue execution or customer acceptance.",
+      "kill": "Original outside demand or authorization expires; a payment is reversed/disputed; merchant/principal, custody or source license is unproved; mandatory reserves/runway become insufficient; preserve liabilities and halt new capital proposals, never silently move or trade funds."
     }
   ]
 }
