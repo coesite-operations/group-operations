@@ -123,7 +123,8 @@ export function reversalEntriesOf(sales, ruling) {
 export function booksObligations({ accountHolder, repositoryRoot, env = process.env }) {
   if (typeof accountHolder !== "string" || accountHolder === "") throw new TypeError("books obligations need the character who keeps the books");
   const ledgerPath = env.METROPLAT_LEDGER_JOURNAL ?? join(repositoryRoot ?? process.cwd(), ...LEDGER);
-  const registryPath = join(repositoryRoot ?? process.cwd(), ...WALLET_REGISTRY);
+  const registryPath = env.GROUP_WALLET_REGISTRY ?? join(repositoryRoot ?? process.cwd(), ...WALLET_REGISTRY);
+  if (typeof registryPath !== "string" || registryPath.trim() === "") throw new TypeError("GROUP_WALLET_REGISTRY must be a nonempty path");
   const rulings = env.METROPLAT_WEB_DATA_DIR ? join(env.METROPLAT_WEB_DATA_DIR, "records", "rulings") : undefined;
   const pending = () => {
     const sales = x402SalesOf(readFileSync(ledgerPath, "utf8"), JSON.parse(readFileSync(registryPath, "utf8")));
