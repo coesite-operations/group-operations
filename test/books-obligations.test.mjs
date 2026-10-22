@@ -21,6 +21,29 @@ test("the authored ledger's x402 sales are told apart: the Group paying itself i
   assert.deepEqual(x402SalesOf(ledger, registry).map((item) => [item.sourceId, item.selfPaid]), [["evm:own", true], ["evm:stranger", false]]);
 });
 
+test("emsenn founder-held wallets count as swarm-internal, not external x402 earnings", () => {
+  const emsennRegistry = { wallets: [{ address: OWN, owner: "founder" }] };
+  assert.deepEqual(x402SalesOf(ledger, emsennRegistry).map(row => [row.sourceId, row.selfPaid]), [
+    ["evm:own", true], ["evm:stranger", false],
+  ]);
+});
+
+test("founder legal title does not force an invented separate-Group wallet correction", () => {
+  const root = mkdtempSync(join(tmpdir(), "swarm-wallet-"));
+  const ledgerPath = join(root, "lib/emsenn/services/561-group/services/561-group-services-section/data/logs/ledgers/561-group-main-ledger.beancount");
+  const registryPath = join(root, "lib/emsenn/services/561-group/services/engineering-services-section/services/computer-engineering-services-section/services/computer-systems-engineering-services-section/services/computer-blockchain-system-services-section/services/key-management-services-section/data/records/2026-09-05-wallet-registry.json");
+  const sourceLedger = ledger + '\n2026-10-22 note Assets:Digital-Assets:EVM:Base:Custody:EM-SWARM "EVM address ' + OWN + '"\n';
+  const emsennRegistry = { wallets: [{ address: OWN, owner: "founder" }] };
+  for (const [path, body] of [[ledgerPath, sourceLedger], [registryPath, JSON.stringify(emsennRegistry)]]) {
+    mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, body);
+  }
+  const book = booksObligations({ accountHolder: "emsenn", repositoryRoot: root,
+    env: { METROPLAT_WEB_DATA_DIR: join(root, "web") } });
+  assert.deepEqual(book.obligations().filter(row => row.id.startsWith("custody-")), []);
+  assert.deepEqual(x402SalesOf(sourceLedger, emsennRegistry).map(row => row.selfPaid), [true, false]);
+  assert.equal(JSON.parse(readFileSync(registryPath, "utf8")).wallets[0].owner, "founder");
+});
+
 test("custodian approval defers payment-derived income while preserving cash and transfer identities", async () => {
   const root = mkdtempSync(join(tmpdir(), "books-"));
   const ledgerPath = join(root, "lib/emsenn/services/561-group/services/561-group-services-section/data/logs/ledgers/561-group-main-ledger.beancount");
