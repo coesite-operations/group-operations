@@ -87,5 +87,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/coesite-operations/group-operations.git"
+  },
+  "license": "Apache-2.0",
+  "funding": {
+    "type": "individual",
+    "url": "https://github.com/561-group/.github/blob/main/TIPS.md"
   }
 }
