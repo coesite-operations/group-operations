@@ -32,7 +32,7 @@ const base = {
   campaignIds: ["reconcile-external-earnings-to-treasury"],
 };
 const stages = [
-  "identify-paid-demand", "qualify-buyer-and-principal",
+  "identify-external-inflow", "qualify-source-and-attribution",
   "receive-service-performance", "qualify-processor-payment",
   "receive-bank-settlement", "reconcile-authored-books",
   "reserve-and-restrict-capital", "assay-investable-surplus",
@@ -87,17 +87,17 @@ test("even an apparently complete evidence packet cannot manufacture funds or tr
 
 test("the staged economic contract differentiates payment, settlement, investable cash and return", () => {
   const effect = id => campaign.stages.find(s => s.id === id).effect;
-  assert.match(effect("qualify-buyer-and-principal"), /self-payment/);
+  assert.match(effect("qualify-source-and-attribution"), /self-payments/);
   assert.match(effect("receive-service-performance"), /independently receive/i);
   assert.match(effect("qualify-processor-payment"), /duplicate/);
   assert.match(effect("receive-bank-settlement"), /bank\/qualified-custodian arrival/);
   assert.match(effect("reconcile-authored-books"), /Farolfi/);
   assert.match(effect("reserve-and-restrict-capital"), /runway/);
-  assert.match(effect("assay-investable-surplus"), /bank-settled unrestricted net cash/);
-  assert.match(effect("obtain-competent-authorization"), /does not itself authorize a trade/);
-  assert.match(effect("observe-authorized-execution"), /campaign itself performs no asset move/);
+  assert.match(effect("assay-investable-surplus"), /demonstrably available emsenn-owned funds/);
+  assert.match(effect("obtain-competent-authorization"), /never grants external asset-moving authority/);
+  assert.match(effect("observe-authorized-execution"), /attribution alone performs no external move/);
   assert.match(effect("receive-and-reconcile"), /investment P&L/);
-  assert.match(campaign.kill, /revoked approval|revoked|authorization expires/);
+  assert.match(campaign.kill, /revoked/);
 });
 
 test("wrong source, false work, or caller identity replacement cannot bind treasury authority", () => {
@@ -117,4 +117,25 @@ test("wrong source, false work, or caller identity replacement cannot bind treas
   assert.throws(() => planOperatingCell({
     ...base, parameters: { bank_credit_ref: "malformed\nsecret" },
   }), /extra parameters must be bounded/);
+});
+
+test("emsenn is the economic receiving principal for the agent swarm, not a disqualifying personal merchant", () => {
+  const effect = id => campaign.stages.find(s => s.id === id).effect;
+  for (const parameter of [
+    "swarm_economic_principal_ref", "receiving_policy_ref",
+    "inflow_basis_ref", "source_account_holder_ref"
+  ]) assert.ok(campaign.parameters.includes(parameter), parameter);
+  assert.match(effect("qualify-source-and-attribution"), /money paid to emsenn/);
+  assert.match(effect("qualify-source-and-attribution"), /agent swarm/);
+  assert.match(effect("qualify-source-and-attribution"), /no double-count/);
+  assert.match(effect("qualify-processor-payment"), /Stripe, PayPal, x402/);
+  assert.match(effect("qualify-processor-payment"), /not rejected merely for lacking a separate/);
+  assert.match(effect("receive-service-performance"), /tips, gifts, donations/);
+  assert.match(effect("receive-bank-settlement"), /provisional external inflow/);
+  assert.match(effect("reconcile-authored-books"), /same original receipt once/);
+  assert.match(effect("reserve-and-restrict-capital"), /not categorically excluded as 'personal'/);
+  assert.match(effect("assay-investable-surplus"), /no distinct Group incorporation or merchant is required/);
+  assert.match(effect("obtain-competent-authorization"), /do not invent a separate 561 Group company approval requirement/);
+  assert.match(effect("receive-and-reconcile"), /one receipt cannot become two earnings/);
+  assert.match(campaign.completion, /tips, gifts and other nonsale receipts/);
 });
