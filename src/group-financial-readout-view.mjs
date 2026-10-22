@@ -64,10 +64,11 @@ const WALLET_REGISTRY = ["lib", "emsenn", "services", "561-group", "services", "
 /**
  * The x402 sales the authored ledger books (the retired seller-booking route wrote them there), each
  * `{sourceId, date, payer, amount, currency, account, selfPaid}`: `selfPaid` when the wallet
- * registry names the payer as the Group's own, which makes it no sale at all.
+ * registry names the payer as emsenn's founder wallet or an org wallet. Both are within the
+ * 561 Group agent swarm's economic perimeter: moving money between them is no outside sale.
  */
 export function x402SalesOf(ledgerText, registry) {
-  const own = new Set((registry?.wallets ?? []).filter((wallet) => wallet.owner === "org").map((wallet) => String(wallet.address).toLowerCase()));
+  const own = new Set((registry?.wallets ?? []).filter((wallet) => wallet.owner === "org" || wallet.owner === "founder").map((wallet) => String(wallet.address).toLowerCase()));
   return ledgerText.split(/\n(?=\d{4}-\d\d-\d\d )/u).filter((block) => /^\d{4}-\d\d-\d\d \* /u.test(block) && /Income:Sales:X402/u.test(block) && !/^\s+reverses: /mu.test(block)).flatMap((block) => {
     const payer = /payer: "([^"]+)"/u.exec(block)?.[1]?.toLowerCase();
     const sourceId = /source_id: "([^"]+)"/u.exec(block)?.[1];
@@ -76,7 +77,7 @@ export function x402SalesOf(ledgerText, registry) {
   });
 }
 
-/** The sales the authored ledger books that the Group's own wallets paid. */
+/** Retired seller route's supposed sales paid by wallets within the same emsenn/swarm economic perimeter. */
 export const selfPaidSalesOf = (ledgerText, registry) => x402SalesOf(ledgerText, registry).filter((sale) => sale.selfPaid);
 
 /**
@@ -136,6 +137,10 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
   const custodyOwed = () => {
     const byCredential = new Map();
     for (const wallet of custodyDisagreementsOf(readFileSync(ledgerPath, "utf8"), JSON.parse(readFileSync(registryPath, "utf8")))) {
+      // Founder-held wallets belong to the same swarm economic perimeter.
+      // A group operating-book entry does not prove a distinct legal owner.
+      // Do not force a binary "group versus founder" ownership rewrite.
+      if (wallet.registryOwner === "founder") continue;
       const credential = credentialOf(wallet.ledgerAccount);
       (byCredential.get(credential) ?? byCredential.set(credential, []).get(credential)).push(wallet);
     }
@@ -155,7 +160,7 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       const custody = custodyOwed();
       return [
         ...(sales.length === 0 || ruled(id) ? [] : [{ id, to: [accountHolder], title: `Decide whether to defer ${sales.length} payment-derived income entries`,
-          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by the Group's own wallet buying its listings for the x402 Bazaar, and a sale needs a buyer outside the Group. `}${outside.length === 0 ? "" : `The ${outside.length} paid by other wallets (${total(outside)} ${outside[0].currency}) also lack a qualified delivery judgment. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
+          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by an emsenn/swarm-controlled wallet buying its own listings for the x402 Bazaar, and a new outside sale needs a payer outside that economic perimeter. `}${outside.length === 0 ? "" : `The ${outside.length} paid by other wallets (${total(outside)} ${outside[0].currency}) also lack a qualified delivery judgment. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
         ...custody.map((entry) => ({ id: entry.id, to: [accountHolder], title: `Say whose wallets ${entry.credentials.length} keys hold`,
           why: `The main ledger holds the wallets of ${entry.credentials.length} keys (${entry.credentials.join(", ")}) in the Group's custody, but the wallet registry marks them as the founder's own. One of them receives the x402 market's sales. Only their holder can say which is true, and the books are wrong until the records agree.` })),
       ];
@@ -181,7 +186,7 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       return {
         memo: { id, sales: own.map((sale) => sale.sourceId), handed: outside.map((sale) => sale.sourceId) },
         steps: [
-          ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the house registry holds as the Group's own, to buy its listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reclassifies their income as pending receipts without changing the cash asset.`]),
+          ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the registry holds within emsenn's and the swarm's economic perimeter, to buy listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reclassifies their income as pending receipts without changing the cash asset.`]),
           ...(outside.length === 0 ? [] : [`${outside.length} were paid by an outside buyer (${[...new Set(outside.map((sale) => sale.payer))].join(", ")}). Approving reclassifies their income as pending receipts. Cash remains in the authored asset account; delivery and customer acceptance are unobserved.`]),
           "Each reversal is dated today and cites your ruling. Nothing already booked is edited.",
           "Type approve, or decline to keep them as they are, and press the button.",
