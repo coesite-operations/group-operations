@@ -2,7 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { planOperatingCell } from "@red-cup-engineering/organizing/enterprise";
+import { pathToFileURL } from "node:url";
+
+// In the owning Coesite CI the original Engineering source is checked out at
+// one exact revision. In its native installed workspace the package export
+// remains the original module; neither path is a copied planning engine.
+const originalReader = process.env.AOE_ORIGINAL_READER_FILE
+  ? pathToFileURL(process.env.AOE_ORIGINAL_READER_FILE).href
+  : "@red-cup-engineering/organizing/enterprise";
+const { planOperatingCell } = await import(originalReader);
 
 const read = path => readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const cellsText = read("content/pulse-operating-cells.v1.json");
