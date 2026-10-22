@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { bookedSourcesOf } from "../src/acceptance.mjs";
-import { booksObligations, reversalEntriesOf, x402SalesOf } from "../src/group-financial-readout-view.mjs";
+import { booksObligations, custodyDisagreementsOf, reversalEntriesOf, x402SalesOf } from "../src/group-financial-readout-view.mjs";
 
 const OWN = "0x42f72c0a340a4a55c082fe42483e87691d2bff64";
 const STRANGER = "0xec2abd3eda89bed90124736e317e847d5fb6d034";
@@ -19,6 +19,43 @@ const registry = { wallets: [{ address: OWN, owner: "org" }] };
 
 test("the authored ledger's x402 sales are told apart: the Group paying itself is no sale", () => {
   assert.deepEqual(x402SalesOf(ledger, registry).map((item) => [item.sourceId, item.selfPaid]), [["evm:own", true], ["evm:stranger", false]]);
+});
+
+test("emsenn founder and org wallets both count as internal to the swarm, but an outside payer does not", () => {
+  for (const owner of ["founder", "org"]) {
+    const attribution = x402SalesOf(ledger, { wallets: [{ owner, address: OWN.toUpperCase() }] });
+    assert.deepEqual(attribution.map(({ sourceId, selfPaid }) => [sourceId, selfPaid]), [
+      ["evm:own", true], ["evm:stranger", false],
+    ]);
+  }
+});
+
+test("emsenn ownership needs no fictional custody ruling, and a forged books answer is rejected", () => {
+  const root = mkdtempSync(join(tmpdir(), "swarm-books-"));
+  const ledgerPath = join(root, "lib/emsenn/services/561-group/services/561-group-services-section/data/logs/ledgers/561-group-main-ledger.beancount");
+  const registryPath = join(root, "lib/emsenn/services/561-group/services/engineering-services-section/services/computer-engineering-services-section/services/computer-systems-engineering-services-section/services/computer-blockchain-system-services-section/services/key-management-services-section/data/records/2026-09-05-wallet-registry.json");
+  const sourceLedger = ledger + '\n2026-10-22 note Assets:Digital-Assets:EVM:Base:Custody:EM-SWARM "EVM address ' + OWN + '"\n';
+  const registry = { wallets: [{ address: OWN, owner: "founder" }] };
+  for (const [path, body] of [[ledgerPath, sourceLedger], [registryPath, JSON.stringify(registry)]]) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, body);
+  }
+  assert.deepEqual(custodyDisagreementsOf(sourceLedger, registry), []);
+  const books = booksObligations({
+    accountHolder: "emsenn", repositoryRoot: root,
+    env: { METROPLAT_WEB_DATA_DIR: join(root, "web") },
+  });
+  const due = books.obligations();
+  assert.equal(due.length, 1);
+  assert.match(due[0].title, /payment-derived income/);
+  const { memo } = books.start(due[0].id);
+  assert.deepEqual(memo, { id: due[0].id, sales: ["evm:own"], handed: ["evm:stranger"] });
+  assert.throws(() => books.finish(due[0].id, { ...memo, sales: ["evm:stranger"] }, "approve"), /source payment identities/);
+  const done = books.finish(due[0].id, memo, "approve");
+  assert.equal(done.title, "Reversal approved");
+  assert.throws(() => books.finish(due[0].id, memo, "approve"), /already answered/);
+  assert.deepEqual(books.obligations(), []);
+  assert.equal(JSON.parse(readFileSync(registryPath, "utf8")).wallets[0].owner, "founder");
 });
 
 test("custodian approval defers payment-derived income while preserving cash and transfer identities", async () => {
