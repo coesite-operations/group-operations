@@ -224,6 +224,92 @@
       ],
       "completion": "qualified provider section and independent receiver accept a source-bound useful service outcome after actual customer/provider contract and authorized execution; customer acceptance, booked payment and Academy formation are distinct receipts",
       "kill": "customer declines, authority expires or is revoked, provider cannot qualify lawful capacity, or independently evidenced demand ends after fulfilling outstanding obligations"
+    },
+    {
+      "id": "govern-marketing-work",
+      "endeavorRole": "marketing",
+      "parameters": [
+        "work_ref",
+        "principal",
+        "consumer",
+        "service_id",
+        "office_bundle",
+        "acceptance_test",
+        "commission_ref",
+        "original_qualifying_claim_ref",
+        "campaign_message_revision",
+        "outside_audience_ref",
+        "legitimate_channel_ref",
+        "rights_approval_ref",
+        "spend_policy_ref",
+        "independent_publication_receipt_ref",
+        "measurement_definition_ref",
+        "withdrawal_rule_ref"
+      ],
+      "stages": [
+        {
+          "id": "commission",
+          "ownerOffice": "configured-commissioning-office",
+          "effect": "Recover original marketing Work, accountable contracting principal, genuine audience need, correct service/offering owner and documented desired beneficiary result; no task is authorized by a calendar tactic or channel suggestion."
+        },
+        {
+          "id": "qualify-claims",
+          "ownerOffice": "configured-claims-owner",
+          "effect": "Obtain original commercial/scientific/editorial claim source, exact revision, proof status, value/price/availability, image/text license and contrasting unsupported claims; a creative cannot make a claim true."
+        },
+        {
+          "id": "form-message",
+          "ownerOffice": "configured-marketing-producer",
+          "effect": "Select source-qualified honest message, audience/context and actual customer job; keep rejected and pending creative revisions separate from approvals, inspect conflict of interest and prohibited audience/recipient practices."
+        },
+        {
+          "id": "independent-review",
+          "ownerOffice": "configured-independent-assayer",
+          "effect": "Receive source/right/claims/editorial checks and refusal/hold/resolution from accountable distinct reviewer; the creator's assent or one model wearing two masks is not independent review."
+        },
+        {
+          "id": "choose-channels",
+          "ownerOffice": "configured-distribution-steward",
+          "effect": "Compare original owned, RSS/ActivityPub, qualified public or opted-in outreach and context-only house ad channels with correct existing installed providers; do not invent consent, followers, ad publishers or signed offers."
+        },
+        {
+          "id": "approve-effect",
+          "ownerOffice": "configured-authorized-publisher",
+          "effect": "Require exact authenticated channel/identity permission, current consumer grant, privacy/consent and jurisdiction, optional explicit capped paid-spend approval when actually spending; no unauthorized external publication, cold contact or billing."
+        },
+        {
+          "id": "publish",
+          "ownerOffice": "configured-authorized-publisher",
+          "effect": "Release only against actual original publisher/host and revision while preserving external identity and material-connection disclosures, then separately observe real deployment/channel publication response."
+        },
+        {
+          "id": "observe-receiving",
+          "ownerOffice": "configured-independent-assayer",
+          "effect": "Distinguish built creative, scheduled job, publisher ACK, physically served placement, aggregate response, actual human or agent receipt, authorized request, accepted useful output and settled purchase; separate missing data and disagreement."
+        },
+        {
+          "id": "evaluate",
+          "ownerOffice": "configured-commissioning-office",
+          "effect": "Compare observed metrics with defined eligible audience/placement denominator, baseline, bounded campaign window and privacy limits; allocate further lawful attention or correct message/offer at original owner."
+        },
+        {
+          "id": "stop-or-renew",
+          "ownerOffice": "configured-authorized-publisher",
+          "effect": "Observe expiry, claim change, opt-out, revoked grant, complaint or negative recipient response; withdraw/suppress/suspend across exact original channels, preserve audit and independent retest, renew only with source/current authority."
+        },
+        {
+          "id": "receive",
+          "ownerOffice": "consumer",
+          "effect": "Original beneficiary/commissioner independently judges whether marketing made original useful Work more discoverable and receivable, refuses misleading measurements and returns correct outcomes to original seller/public owner."
+        },
+        {
+          "id": "reconcile",
+          "ownerOffice": "corporate-secretary",
+          "effect": "Preserve original Work, campaign/creative/review/source/host/recipient revisions and true costs in existing work and finance/merchant ledgers, return unmet gate and curriculum need to actual owner."
+        }
+      ],
+      "completion": "At least one independently evidenced correctly authorized source-qualified campaign placement or publication contributes to a measured beneficiary/eligible audience receiving condition; customer and finance outcomes are observed separately, and all required withdrawal/rights gates remain valid.",
+      "kill": "Offer is withdrawn or disproved; original publisher revokes channel authority; data/privacy or source rights fail; elapsed window/beneficiary no longer warrants distribution; retain and discharge committed obligations separately."
     }
   ]
 }
