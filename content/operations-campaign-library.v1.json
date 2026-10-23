@@ -1,7 +1,7 @@
 {
   "schemaVersion": "operations-campaign-library.v1",
   "provider": "coesite-operations",
-  "revision": "2026-10-21",
+  "revision": "2026-10-22",
   "campaigns": [
     {
       "id": "form-operating-cell",
@@ -310,6 +310,90 @@
       ],
       "completion": "At least one independently evidenced correctly authorized source-qualified campaign placement or publication contributes to a measured beneficiary/eligible audience receiving condition; customer and finance outcomes are observed separately, and all required withdrawal/rights gates remain valid.",
       "kill": "Offer is withdrawn or disproved; original publisher revokes channel authority; data/privacy or source rights fail; elapsed window/beneficiary no longer warrants distribution; retain and discharge committed obligations separately."
+    },
+    {
+      "id": "reconcile-external-earnings-to-treasury",
+      "endeavorRole": "treasury",
+      "parameters": [
+        "work_ref",
+        "principal",
+        "consumer",
+        "service_id",
+        "office_bundle",
+        "acceptance_test",
+        "inflow_basis_ref",
+        "source_account_holder_ref",
+        "original_payment_ref"
+      ],
+      "stages": [
+        {
+          "id": "identify-external-inflow",
+          "ownerOffice": "corporate-secretary",
+          "effect": "Identify an actual incoming value to emsenn, the receiving principal for the 561 Group agent swarm, and its external source, original payment identity and basis: service sale, tip, donation, gift, royalty, reward, refund, asset sale, loan or other. Only a contracted sale requires priced offer and customer Work; mark buyer/fulfillment fields explicitly not-applicable when the basis truly does not require them. Interest, an invoice, or a projection is not received cash."
+        },
+        {
+          "id": "qualify-source-and-attribution",
+          "ownerOffice": "corporate-secretary",
+          "effect": "Apply the Leader's 2026-10-22 receiving rule: money paid to emsenn is attributable to the 561 Group agent swarm's economy. Read actual owner, controller, source party, payer and source-bound purpose. The 561 Group is the name of the agent swarm, not by that name a separately evidenced legal person or merchant. Separate genuine outside receipts from transfers among emsenn/swarm-controlled accounts, self-purchases, related-party inflows and disputed source claims, with exactly one original inflow identity and no double-count."
+        },
+        {
+          "id": "receive-service-performance",
+          "ownerOffice": "quality-operations",
+          "effect": "For a sale or other performance-contingent inflow, independently receive delivered service and buyer acceptance against original terms; for tips, gifts, donations or other non-sale payments preserve the actual basis and an evidenced not-applicable performance status. Neither an ordinary gift nor a payment platform receipt shall be mislabeled an accepted sale."
+        },
+        {
+          "id": "qualify-processor-payment",
+          "ownerOffice": "treasury-operations",
+          "effect": "Read original Stripe, PayPal, x402 or other actual original receiving-rail evidence with immutable provider transaction ID, currency, time, payer, legal account holder and funds state. emsenn's sole-proprietor or individually held merchant and payout accounts are eligible swarm receiving rails when source-owned and properly authorized; they are not rejected merely for lacking a separate '561 Group' merchant name. Reject duplicates, internal self-payments as new outside receipts, stale/disputed or untraceable claims without inventing a second payment ledger."
+        },
+        {
+          "id": "receive-bank-settlement",
+          "ownerOffice": "treasury-operations",
+          "effect": "Distinguish provider-notified payment, processor-held amount, provider-credited available funds, transfer initiated, bank/custodian-settled money and actual withdrawability on emsenn-controlled accounts. Admit real outside cash to the swarm inflow reading at its original corroborated receipt status; never upgrade pending balances or email notices to settled investable cash without independent provider/custody evidence. Bank settlement is one possible later receipt, not a prerequisite for recognizing a provisional external inflow."
+        },
+        {
+          "id": "reconcile-authored-books",
+          "ownerOffice": "accounting-operations",
+          "effect": "Read original Farolfi/source-owned emsenn and swarm economic books and provider receipts. Preserve legal holder 'emsenn', operational beneficiary '561 Group agent swarm', original purpose and transaction identity; classify gifts, tips, sales, loans, refunds and investment proceeds distinctly. Consolidate the same original receipt once for swarm operational reporting without double-booking a personal-to-swarm transfer as external income, and reconcile fees, disputes and liabilities."
+        },
+        {
+          "id": "reserve-and-restrict-capital",
+          "ownerOffice": "treasury-operations",
+          "effect": "Recognize emsenn-controlled funds as within the 561 Group swarm's economic perimeter, not categorically excluded as 'personal'. Track actual cash custody and specific restrictions: taxes, debts, refunds, third-party/escrow obligations, grant conditions, wages and protected operating/compute runway. Owner allocation permission is separate from attribution; do not assume all attributed inflows are liquid or eligible investment principal."
+        },
+        {
+          "id": "assay-investable-surplus",
+          "ownerOffice": "quality-operations",
+          "effect": "Independently assay unrestricted, demonstrably available emsenn-owned funds authorized for the 561 Group swarm's operations or financial investments, with original receiving-rail balance/time, legal account holder, liabilities and capital floor. Include legitimate emsenn PayPal/Stripe/bank or authorized custody money when verified; no distinct Group incorporation or merchant is required for economic attribution. Refuse unknown spendability, absent account mandate, client-held money or unreserved obligations; never treat provider-pending balances as withdrawable."
+        },
+        {
+          "id": "compare-capital-uses",
+          "ownerOffice": "chief-financial-officer",
+          "effect": "Compare emsenn/swarm available funds applied to verified near-cash service delivery and metered compute, operating liabilities and protected runway versus separately permitted investment sleeves, based on marginal net contribution, risk, downside, liquidity and opportunity cost rather than advertised yield."
+        },
+        {
+          "id": "propose-bounded-allocation",
+          "ownerOffice": "chief-financial-officer",
+          "effect": "Prepare one non-executing proposal naming emsenn as the legal holder where applicable, 561 Group as the agent swarm and internal economic beneficiary, exact original source and destination accounts, denomination, available amount, mandate, protected cash floor, risk sleeve, quote recency and competent permission. Internal attribution does not effect a bank transfer, nor create a second asset."
+        },
+        {
+          "id": "obtain-competent-authorization",
+          "ownerOffice": "corporate-secretary",
+          "effect": "Receive the real current account holder/owner's investment mandate and precise permissions under the actual financial venue, custodian and signer, with any required external legal/regulatory limits. When emsenn is the legal owner, do not invent a separate 561 Group company approval requirement; an internal CFO office title, source-qualified receipt or populated campaign field alone never grants external asset-moving authority."
+        },
+        {
+          "id": "observe-authorized-execution",
+          "ownerOffice": "custody-operations",
+          "effect": "Only original custody/venue providers operating within emsenn's or another actual holder's separately verified mandate may transfer or invest; independently observe real transfer, order, fill, fees and custody acknowledgments. A swarm accounting attribution alone performs no external move and never asserts bank/legal ownership under a fictional corporate entity."
+        },
+        {
+          "id": "receive-and-reconcile",
+          "ownerOffice": "quality-operations",
+          "effect": "Receive the actual external inflow, legal emsenn custody, source basis (sale/tip/gift/etc.), available reserves, separately approved allocations, returns and negative/refused effects in original source-owned records. Distinguish received external gross cash, realized earned revenue, loans, internal transfers, capital invested and investment P&L; one receipt cannot become two earnings merely by attributing it to the swarm."
+        }
+      ],
+      "completion": "An actual external payment to emsenn or another approved receiving account is source-identified, classified and recognized once in the swarm economic reading at the status the original provider supports. It may be a sale, tip, donation, gift, royalty or other actual basis, and does not wait for a formal proof, a customer when none is relevant, a future bank payout or an investment proposal. Separate later Work stages receive bank settlement, reserves, spendable headroom and independently authorized investment allocation or a refusal. No intake note, campaign binding, source code, or office title spends or moves money.",
+      "kill": "Source payment is reversed/disputed; payer/source or emsenn owner authority is unproved; actual custody or mandate is revoked, or taxes, restrictions and reserved runway defeat eligibility. Halt new financial allocation proposals and preserve original liabilities, receipts and cash-classification history; never undo attribution by inventing a separate 561 Group legal merchant."
     }
   ]
 }
