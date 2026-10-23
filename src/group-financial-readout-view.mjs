@@ -133,9 +133,15 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
   if (typeof registryPath !== "string" || registryPath.trim() === "") throw new TypeError("GROUP_WALLET_REGISTRY must be a nonempty path");
   const rulings = env.METROPLAT_WEB_DATA_DIR ? join(env.METROPLAT_WEB_DATA_DIR, "records", "rulings") : undefined;
   const pending = () => {
-    const sales = x402SalesOf(readFileSync(ledgerPath, "utf8"), JSON.parse(readFileSync(registryPath, "utf8")));
+    const ledgerText = readFileSync(ledgerPath, "utf8");
+    const registryText = readFileSync(registryPath, "utf8");
+    const sales = x402SalesOf(ledgerText, JSON.parse(registryText));
     const id = `x402-sales-${createHash("sha256").update(sales.map((sale) => sale.sourceId).sort().join("\n")).digest("hex").slice(0, 16)}`;
-    return { id, sales };
+    // The identity-based Work/ruling key remains stable for historical custody.
+    // Separately fence approval to BOTH source editions: unchanged source IDs
+    // do not imply unchanged amounts, denomination, or registry evidence.
+    const edition = createHash("sha256").update(JSON.stringify([ledgerText, registryText])).digest("hex");
+    return { id, sales, edition };
   };
   const ruled = (id) => rulings !== undefined && existsSync(join(rulings, `${id}.json`));
   return {
@@ -170,7 +176,7 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       return {
         // `handed` is retained as a historical ruling field; it does not
         // certify that a payer outside the known internal registry is external.
-        memo: { id, sales: own.map((sale) => sale.sourceId), handed: unresolved.map((sale) => sale.sourceId) },
+        memo: { id, sales: own.map((sale) => sale.sourceId), handed: unresolved.map((sale) => sale.sourceId), sourceEdition: current.edition },
         steps: [
           ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the house registry attributes to emsenn or the swarm, to buy its own listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reclassifies their income as pending receipts without changing the cash asset.`]),
           ...(unresolved.length === 0 ? [] : [`${unresolved.length} payments have payer wallets (${[...new Set(unresolved.map((sale) => sale.payer))].join(", ")}) absent from the configured internal registry. Their outside-versus-internal origin is UNRESOLVED, not a verified external buyer. Approving reclassifies their income as pending receipts. Cash remains in the authored asset account; delivery and customer acceptance are unobserved.`]),
@@ -193,6 +199,9 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       if (JSON.stringify(own) !== JSON.stringify(proposedOwn) ||
           JSON.stringify(unresolved) !== JSON.stringify(proposedUnresolved)) {
         throw new Error("The source payment identities no longer match the received request.");
+      }
+      if (memo?.sourceEdition !== current.edition) {
+        throw new Error("The source book or wallet registry edition changed after this review was prepared.");
       }
       if (rulings === undefined) throw new Error("This node keeps no web data, so it cannot record the ruling.");
       mkdirSync(rulings, { recursive: true });
