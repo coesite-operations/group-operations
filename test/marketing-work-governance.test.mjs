@@ -88,3 +88,25 @@ test("marketing governance rejects wrong source or confused original Work, witho
   assert.match(campaign.stages.find(s=>s.id==="observe-receiving").effect,/served placement/);
   assert.match(campaign.kill,/revokes channel authority/);
 });
+
+test("professional Services Section hiring remains a source-qualified native Work campaign, not an Office appointment",()=>{
+  const hire=JSON.parse(campaignsText).campaigns.find(x=>x.id==="hire-professional-service-section");
+  assert.ok(hire,"original Coesite operating campaigns must actually supply section hiring");
+  assert.deepEqual(hire.stages.map(x=>x.id),[
+    "need","compare","section","formation","offer","agreement","delivery","assay","receive","account"
+  ]);
+  assert.ok(hire.parameters.includes("provider_section_ref"));
+  assert.ok(hire.parameters.includes("independent_assayer"));
+  assert.match(hire.stages.find(x=>x.id==="formation").effect,/not the buyer/);
+  assert.match(hire.stages.find(x=>x.id==="section").effect,/directory or office title does not form/);
+  const plan=planOperatingCell({...base,campaignIds:[hire.id]});
+  assert.equal(plan.workRef,workRef);
+  assert.equal(plan.campaigns[0].campaignId,hire.id);
+  assert.equal(plan.campaigns[0].state,"unbound");
+  assert.ok(plan.campaigns[0].missingParameters.includes("provider_section_ref"));
+  assert.equal(plan.effectsAuthorized,false);
+  assert.equal(plan.workOpened,false);
+  assert.equal(plan.received,false);
+  assert.equal(plan.source.treeMembershipVerified,false);
+  assert.equal(plan.retainedWork.writer,"native Work Arena work-open/work-move");
+});
