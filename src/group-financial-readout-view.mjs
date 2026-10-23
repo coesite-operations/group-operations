@@ -71,14 +71,25 @@ const WALLET_REGISTRY = ["lib", "emsenn", "services", "561-group", "services", "
  */
 export function x402SalesOf(ledgerText, registry) {
   const own = new Set((registry?.wallets ?? []).filter((wallet) => wallet.owner === "org" || wallet.owner === "founder").map((wallet) => String(wallet.address).toLowerCase()));
-  return ledgerText.split(/\n(?=\d{4}-\d\d-\d\d )/u).filter((block) => /^\d{4}-\d\d-\d\d \* /u.test(block) && /Income:Sales:X402/u.test(block) && !/^\s+reverses: /mu.test(block)).flatMap((block) => {
+  return ledgerText.split(/\n(?=\d{4}-\d\d-\d\d )/u).filter((block) =>
+    /^\d{4}-\d\d-\d\d \* /u.test(block) &&
+    /^[ \t]+Income:Sales:X402(?::\S+)?(?:\s|$)/mu.test(block) &&
+    !/^[ \t]+reverses: /mu.test(block)).map((block) => {
     const payer = /payer: "([^"]+)"/u.exec(block)?.[1]?.toLowerCase();
     const sourceId = /source_id: "([^"]+)"/u.exec(block)?.[1];
-    const income = /^\s+(Income:Sales:X402:\S+)\s+(-?[\d.]+) (\S+)/mu.exec(block);
-    const registryMarkedInternal = own.has(payer);
-    return payer && sourceId && income ? [Object.freeze({ sourceId, date: block.slice(0, 10), payer, amount: income[2].replace(/^-/u, ""), currency: income[3], account: income[1],
-      selfPaid: registryMarkedInternal, // historical compatibility, NOT external-party evidence when false
-      payerClass: registryMarkedInternal ? "registered-internal" : "unresolved" })] : [];
+    // An omitted or unreadable original posting is UNKNOWN, never a zero sale.
+    // Require exactly one unambiguous historical X402 income leg per sale.
+    const postings = block.split("\n").map((line) => line.trim())
+      .filter((line) => /^Income:Sales:X402(?::\S+)?(?:\s|$)/u.test(line));
+    const income = postings.length === 1
+      ? /^(Income:Sales:X402:\S+)[ \t]+(-[0-9]+(?:\.[0-9]+)?)[ \t]+([A-Z][A-Z0-9._-]*)$/u.exec(postings[0])
+      : null;
+    if (!payer || !sourceId || !income || !/[1-9]/u.test(income[2]))
+      throw new Error("Incomplete or ambiguous x402 sale posting: source ID, payer, one nonzero negative income leg and denomination required.");
+    const registeredInternal = own.has(payer);
+    return Object.freeze({ sourceId, date: block.slice(0, 10), payer, amount: income[2].slice(1),
+      currency: income[3], account: income[1], selfPaid: registeredInternal,
+      payerClass: registeredInternal ? "registered-internal" : "unresolved" });
   });
 }
 
