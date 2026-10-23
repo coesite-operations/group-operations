@@ -30,6 +30,43 @@ test("emsenn founder and org wallets both count as internal to the swarm, but an
   }
 });
 
+test("unknown x402 payer provenance never becomes an asserted external buyer", () => {
+  const known = x402SalesOf(ledger, registry);
+  assert.deepEqual(known.map(x => [x.sourceId, x.selfPaid, x.payerClass]), [
+    ["evm:own", true, "registered-internal"],
+    ["evm:stranger", false, "unresolved"],
+  ], "known internal registration is positive-only, not an exhaustive external party census");
+
+  for (const incomplete of [undefined, { wallets: [] }, {
+    wallets: [{ address: STRANGER, owner: "external" }],
+  }]) {
+    assert.deepEqual(x402SalesOf(ledger, incomplete).map(x => x.payerClass),
+      ["unresolved", "unresolved"],
+      "missing registry and unsupported outside-owner labels cannot authenticate a third party");
+  }
+
+  const root = mkdtempSync(join(tmpdir(), "swarm-payer-unknown-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "incomplete-wallet-registry.json");
+  writeFileSync(ledgerPath, ledger);
+  writeFileSync(registryPath, JSON.stringify(registry));
+  const books = booksObligations({ accountHolder: "emsenn",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath,
+      GROUP_WALLET_REGISTRY: registryPath, METROPLAT_WEB_DATA_DIR: join(root, "web") } });
+  const [due] = books.obligations();
+  assert.ok(due, "the existing original bookkeeper review remains due");
+  assert.match(due.why, /external\/related-party status is unverified/u);
+  assert.doesNotMatch(due.why, /verified external buyer|paid by an outside buyer/iu);
+  const started = books.start(due.id);
+  assert.match(started.steps.join("\n"), /origin is UNRESOLVED/u);
+  assert.doesNotMatch(started.steps.join("\n"), /paid by an outside buyer/iu);
+  assert.deepEqual(started.memo, {
+    id: due.id, sales: ["evm:own"], handed: ["evm:stranger"],
+  }, "old ruling field identities stay stable; 'handed' does not verify outsider status");
+  assert.equal(readFileSync(ledgerPath, "utf8"), ledger,
+    "classification must not mutate the original book or create a financial posting");
+});
+
 test("emsenn ownership needs no fictional custody ruling, and a forged books answer is rejected", () => {
   const root = mkdtempSync(join(tmpdir(), "swarm-books-"));
   const ledgerPath = join(root, "lib/emsenn/services/561-group/services/561-group-services-section/data/logs/ledgers/561-group-main-ledger.beancount");
