@@ -63,8 +63,10 @@ const WALLET_REGISTRY = ["lib", "emsenn", "services", "561-group", "services", "
 
 /**
  * The x402 sales the authored ledger books (the retired seller-booking route wrote them there), each
- * `{sourceId, date, payer, amount, currency, account, selfPaid}`: `selfPaid` when the wallet
- * registry identifies the payer as either founder (emsenn) or org (the agent swarm).\n * Both are within the 561 Group swarm economic perimeter, not external sales.
+ * `{sourceId, date, payer, amount, currency, account, selfPaid, payerClass}`. A payer
+ * listed as founder/org in the configured internal-wallet registry is `registered-internal`.
+ * Absence from that registry is `unresolved`, NOT evidence of an external customer;
+ * the original payment/commerce witness alone can qualify outside-party status.
  */
 export function x402SalesOf(ledgerText, registry) {
   const own = new Set((registry?.wallets ?? []).filter((wallet) => wallet.owner === "org" || wallet.owner === "founder").map((wallet) => String(wallet.address).toLowerCase()));
@@ -72,7 +74,10 @@ export function x402SalesOf(ledgerText, registry) {
     const payer = /payer: "([^"]+)"/u.exec(block)?.[1]?.toLowerCase();
     const sourceId = /source_id: "([^"]+)"/u.exec(block)?.[1];
     const income = /^\s+(Income:Sales:X402:\S+)\s+(-?[\d.]+) (\S+)/mu.exec(block);
-    return payer && sourceId && income ? [Object.freeze({ sourceId, date: block.slice(0, 10), payer, amount: income[2].replace(/^-/u, ""), currency: income[3], account: income[1], selfPaid: own.has(payer) })] : [];
+    const registryMarkedInternal = own.has(payer);
+    return payer && sourceId && income ? [Object.freeze({ sourceId, date: block.slice(0, 10), payer, amount: income[2].replace(/^-/u, ""), currency: income[3], account: income[1],
+      selfPaid: registryMarkedInternal, // historical compatibility, NOT external-party evidence when false
+      payerClass: registryMarkedInternal ? "registered-internal" : "unresolved" })] : [];
   });
 }
 
@@ -138,23 +143,25 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
     obligations() {
       const { id, sales } = pending();
       const own = sales.filter((sale) => sale.selfPaid);
-      const outside = sales.filter((sale) => !sale.selfPaid);
+      const unresolved = sales.filter((sale) => sale.payerClass === "unresolved");
       const total = (list) => list.reduce((sum, sale) => sum + Number(sale.amount), 0).toFixed(3);
       return [
         ...(sales.length === 0 || ruled(id) ? [] : [{ id, to: [accountHolder], title: `Decide whether to defer ${sales.length} payment-derived income entries`,
-          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${outside.length === 0 ? "" : `The ${outside.length} paid by other wallets (${total(outside)} ${outside[0].currency}) also lack a qualified delivery judgment. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
+          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${unresolved.length === 0 ? "" : `${unresolved.length} payer wallets (${total(unresolved)} ${unresolved[0].currency}) are not in the configured internal-wallet registry; their external/related-party status is unverified and delivery judgment is also missing. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
       ];
     },
     start(id) {
       const current = pending();
       if (current.id !== id) throw new Error("The ledger changed since this was listed. Go back and open it again.");
       const own = current.sales.filter((sale) => sale.selfPaid);
-      const outside = current.sales.filter((sale) => !sale.selfPaid);
+      const unresolved = current.sales.filter((sale) => sale.payerClass === "unresolved");
       return {
-        memo: { id, sales: own.map((sale) => sale.sourceId), handed: outside.map((sale) => sale.sourceId) },
+        // `handed` is retained as a historical ruling field; it does not
+        // certify that a payer outside the known internal registry is external.
+        memo: { id, sales: own.map((sale) => sale.sourceId), handed: unresolved.map((sale) => sale.sourceId) },
         steps: [
           ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the house registry attributes to emsenn or the swarm, to buy its own listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reclassifies their income as pending receipts without changing the cash asset.`]),
-          ...(outside.length === 0 ? [] : [`${outside.length} were paid by an outside buyer (${[...new Set(outside.map((sale) => sale.payer))].join(", ")}). Approving reclassifies their income as pending receipts. Cash remains in the authored asset account; delivery and customer acceptance are unobserved.`]),
+          ...(unresolved.length === 0 ? [] : [`${unresolved.length} payments have payer wallets (${[...new Set(unresolved.map((sale) => sale.payer))].join(", ")}) absent from the configured internal registry. Their outside-versus-internal origin is UNRESOLVED, not a verified external buyer. Approving reclassifies their income as pending receipts. Cash remains in the authored asset account; delivery and customer acceptance are unobserved.`]),
           "Each reversal is dated today and cites your ruling. Nothing already booked is edited.",
           "Type approve, or decline to keep them as they are, and press the button.",
         ],
@@ -168,11 +175,11 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       if (current.id !== id) throw new Error("The ledger changed since this was listed. Go back and open it again.");
       if (ruled(id)) throw new Error("This was already answered. Go back to the list.");
       const own = current.sales.filter(sale => sale.selfPaid).map(sale => sale.sourceId).sort();
-      const outside = current.sales.filter(sale => !sale.selfPaid).map(sale => sale.sourceId).sort();
+      const unresolved = current.sales.filter(sale => sale.payerClass === "unresolved").map(sale => sale.sourceId).sort();
       const proposedOwn = [...(memo?.sales ?? [])].sort();
-      const proposedOutside = [...(memo?.handed ?? [])].sort();
+      const proposedUnresolved = [...(memo?.handed ?? [])].sort();
       if (JSON.stringify(own) !== JSON.stringify(proposedOwn) ||
-          JSON.stringify(outside) !== JSON.stringify(proposedOutside)) {
+          JSON.stringify(unresolved) !== JSON.stringify(proposedUnresolved)) {
         throw new Error("The source payment identities no longer match the received request.");
       }
       if (rulings === undefined) throw new Error("This node keeps no web data, so it cannot record the ruling.");
@@ -181,7 +188,9 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       const temporary = `${path}.${process.pid}.tmp`;
       writeFileSync(temporary, `${JSON.stringify({
         kind: "561-group.books-ruling", id, decision, at: new Date().toISOString(),
-        by: accountHolder, entries: own, handed: outside,
+        // Legacy `handed` denotes unresolved non-internal-registry entries,
+        // not evidence that their payer was external.
+        by: accountHolder, entries: own, handed: unresolved,
       }, null, 2)}\n`, { mode: 0o600 });
       renameSync(temporary, path);
       return { title: decision === "approve" ? "Reversal approved" : "Kept as they are",
