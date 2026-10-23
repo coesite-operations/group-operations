@@ -82,6 +82,54 @@ test("unknown x402 payer provenance never becomes an asserted external buyer", (
     "classification must not mutate the original book or create a financial posting");
 });
 
+test("bookkeeper readout retains source denominations and exact fractional amounts", () => {
+  const root = mkdtempSync(join(tmpdir(), "books-exact-units-"));
+  const ledgerPath = join(root, "source-ledger.beancount");
+  const registryPath = join(root, "source-wallets.json");
+  const priced = (date, payer, id, amount, currency) =>
+    sale(date, payer, id).replaceAll("0.01 USDC", `${amount} ${currency}`);
+  const source = [
+    priced("2026-10-20", OWN, "evm:own-exact", "1.250", "USDC"),
+    priced("2026-10-21", STRANGER, "evm:usd", "1.00", "USD"),
+    priced("2026-10-22", STRANGER, "evm:usdc", "2.00", "USDC"),
+    priced("2026-10-23", STRANGER, "evm:submill", "0.0004", "USDC"),
+  ].join("\n");
+  writeFileSync(ledgerPath, source);
+  writeFileSync(registryPath, JSON.stringify(registry));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath } });
+  const [due] = books.obligations();
+  assert.match(due.why, /1 of them \(1\.25 USDC\) were paid/u);
+  assert.match(due.why, /3 payer wallets \(1 USD; 2\.0004 USDC\)/u,
+    "distinct units cannot be conflated, and sub-mill source amounts stay nonzero");
+  assert.doesNotMatch(due.why, /3\.000 USD|0\.000 USDC/u);
+  assert.deepEqual(books.start(due.id).memo, {
+    id: due.id, sales: ["evm:own-exact"], handed: ["evm:usd", "evm:usdc", "evm:submill"],
+  }, "decision evidence must not mutate original source identities or payer classifications");
+  assert.equal(readFileSync(ledgerPath, "utf8"), source);
+});
+
+test("bookkeeper readout does not lose high-precision totals or admit malformed numbers", () => {
+  const root = mkdtempSync(join(tmpdir(), "books-exact-large-"));
+  const ledgerPath = join(root, "source-ledger.beancount");
+  const registryPath = join(root, "source-wallets.json");
+  const priced = (id, amount) =>
+    sale("2026-10-23", STRANGER, id).replaceAll("0.01 USDC", `${amount} USD`);
+  const source = [
+    priced("evm:large", "9007199254740993.125"),
+    priced("evm:remainder", "0.875"),
+  ].join("\n");
+  writeFileSync(ledgerPath, source);
+  writeFileSync(registryPath, JSON.stringify({ wallets: [] }));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath } });
+  assert.match(books.obligations()[0].why, /9007199254740994 USD/u,
+    "the source-owned exact decimal arithmetic must not pass through IEEE-754 Number");
+  writeFileSync(ledgerPath, priced("evm:malformed", "1..0"));
+  assert.throws(() => books.obligations(), /decimal: not a plain decimal string/u,
+    "a malformed source amount is an explicit failure, not a fabricated zero or rounded sum");
+});
+
 test("emsenn ownership needs no fictional custody ruling, and a forged books answer is rejected", () => {
   const root = mkdtempSync(join(tmpdir(), "swarm-books-"));
   const ledgerPath = join(root, "lib/emsenn/services/561-group/services/561-group-services-section/data/logs/ledgers/561-group-main-ledger.beancount");
