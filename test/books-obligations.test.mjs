@@ -27,6 +27,26 @@ test("missing or ambiguous x402 source postings refuse financial completeness", 
     ["zero source-sale income", original.replace("-0.01 USDC", "-0.00 USDC")],
     ["missing commodity", original.replace("-0.01 USDC", "-0.01")],
     ["two income legs with no justified split", original + "  Income:Sales:X402:Other  -0.02 USDC\n"],
+    ["two conflicting source IDs", original.replace('  source_id: "evm:qualified"',
+      '  source_id: "evm:qualified"\n  source_id: "evm:shadow"')],
+    ["duplicate identical source ID", original.replace('  source_id: "evm:qualified"',
+      '  source_id: "evm:qualified"\n  source_id: "evm:qualified"')],
+    ["two conflicting payers", original.replace('  payer: "' + STRANGER + '"',
+      '  payer: "' + STRANGER + '"\n  payer: "0xshadow"')],
+    ["duplicate identical payer", original.replace('  payer: "' + STRANGER + '"',
+      '  payer: "' + STRANGER + '"\n  payer: "' + STRANGER + '"')],
+    ["source ID appears only in a comment", original.replace('  source_id: "evm:qualified"',
+      '# source_id: "evm:shadow"')],
+    ["payer appears only in a comment", original.replace('  payer: "' + STRANGER + '"',
+      '# payer: "' + STRANGER + '"')],
+    ["source ID exists only on posting metadata", original.replace('  source_id: "evm:qualified"', '')
+      .replace('  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC',
+        '  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC\n    source_id: "evm:posting"')],
+    ["payer exists only on posting metadata", original.replace('  payer: "' + STRANGER + '"', '')
+      .replace('  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC',
+        '  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC\n    payer: "0xposting"')],
+    ["malformed shadow source ID", original.replace('  source_id: "evm:qualified"',
+      '  source_id: "evm:qualified"\n  source_id: evm:shadow')],
   ];
   for (const [caseName, malformed] of invalid) {
     assert.throws(() => x402SalesOf(malformed, registry),
@@ -37,6 +57,15 @@ test("missing or ambiguous x402 source postings refuse financial completeness", 
   }
   assert.deepEqual(x402SalesOf(original, registry).map(({ sourceId }) => sourceId), ["evm:qualified"],
     "positive control: fully witnessed one-leg source sale stays observable");
+  assert.deepEqual(x402SalesOf(original.replace('  source_id: "evm:qualified"',
+    '# source_id: "evm:shadow"\n  source_id: "evm:qualified"'), registry)
+    .map(({ sourceId }) => sourceId), ["evm:qualified"],
+    "non-authoritative comments cannot shadow exact transaction source identity");
+  const withPostingMetadata = original.replace('  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC',
+    '  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC\n    source_id: "evm:posting"\n    payer: "0xposting"');
+  assert.deepEqual(x402SalesOf(withPostingMetadata, registry)
+    .map(({ sourceId, payer }) => [sourceId, payer]), [["evm:qualified", STRANGER]],
+    "posting-level annotations must not impersonate transaction identity");
   const tiny = original.replaceAll("0.01 USDC", "0.0004 USDC");
   assert.equal(x402SalesOf(tiny, registry)[0].amount, "0.0004",
     "positive precision control: do not round away a sub-mill source quantity");
