@@ -1,6 +1,6 @@
 {
   "schemaVersion": "pulse-operating-cell-catalog.v1",
-  "observedAt": "2026-10-11T15:10:00Z",
+  "observedAt": "2026-10-22T00:00:00Z",
   "principal": "561-group",
   "source": "Cold Red Gate Work Arena",
   "cells": [
@@ -162,6 +162,36 @@
         "receiver-bound-report"
       ],
       "acceptance_test": "bounded title/land evidence reaches the authorized receiver with provenance and unresolved legal uncertainty preserved"
+    },
+    {
+      "work_ref": "ni:///sha-256;Vy9F7fxrJ9iybtgOaTmMCBCEKhGS45JVLBqy54XOr2A",
+      "service_id": "external-earnings-treasury",
+      "endeavor_id": "external-cash-to-productive-capital",
+      "consumer": "561 Group Financial Services and Coesite Group Operations",
+      "office_bundle": [
+        "corporate-secretary",
+        "quality-operations",
+        "treasury-operations",
+        "accounting-operations",
+        "chief-financial-officer",
+        "custody-operations"
+      ],
+      "staffing_demand": {
+        "minimum_roles": [
+          "authorized-financial-receiver",
+          "source-bookkeeper",
+          "independent-assayer"
+        ],
+        "capacity": "unknown"
+      },
+      "engineering_capabilities": [
+        "stripe-signed-economic-receipts",
+        "farolfi-book-of-record",
+        "semiotic-eavt-receiving",
+        "group-financial-readout",
+        "custody-bound-financial-venue"
+      ],
+      "acceptance_test": "An actual source-qualified outside inflow to emsenn or another eligible swarm receiver has correct legal-holder and cash-status attribution in the original economic books, without counting internal transfers or waiting on proof of a theorem. Later capital allocation is independently accepted or refused under original custody authority, restrictions and reserves; source catalog admission alone makes no transfer."
     }
   ]
 }
