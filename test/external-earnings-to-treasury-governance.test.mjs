@@ -25,7 +25,8 @@ const source = (role, body) => ({
 });
 const catalog = JSON.parse(campaignsText);
 const campaign = catalog.campaigns.find(row => row.id === "reconcile-external-earnings-to-treasury");
-const workRef = JSON.parse(cellsText).cells[0].work_ref;
+const treasuryCell = JSON.parse(cellsText).cells.find(cell => cell.service_id === "external-earnings-treasury");
+const workRef = treasuryCell?.work_ref;
 const base = {
   cellsText, campaignsText, cellsSource: source("cells", cellsText),
   campaignsSource: source("campaigns", campaignsText), workRef,
@@ -52,7 +53,11 @@ test("authored source selects exact original Work and a nonexecuting treasury ca
   assert.ok(!campaign.parameters.includes("bank_credit_ref"), "bank settlement is a later stage observation, not an intake prerequisite");
   assert.ok(!campaign.parameters.includes("investment_mandate_ref"), "investment authorization is later Work, not a payment recognition precondition");
   const plan = planOperatingCell(base);
+  assert.equal(workRef, "ni:///sha-256;Vy9F7fxrJ9iybtgOaTmMCBCEKhGS45JVLBqy54XOr2A");
   assert.equal(plan.workRef, workRef);
+  assert.equal(plan.serviceId, "external-earnings-treasury");
+  assert.equal(plan.consumer, "561 Group Financial Services and Coesite Group Operations");
+  assert.ok(plan.officeBundle.includes("chief-financial-officer"));
   assert.equal(plan.campaigns.length, 1);
   assert.equal(plan.campaigns[0].campaignId, campaign.id);
   assert.equal(plan.campaigns[0].state, "unbound");
