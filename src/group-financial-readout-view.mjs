@@ -98,16 +98,58 @@ export function custodyDisagreementsOf(_ledgerText, _registry) {
   return [];
 }
 
+/** Edition of the exact original book and registry bytes reviewed by the custodian. */
+export function booksSourcesEditionOf(ledgerText, registryText) {
+  if (typeof ledgerText !== "string" || typeof registryText !== "string")
+    throw new TypeError("Reversal receiving requires original ledger and registry source bytes.");
+  return createHash("sha256").update(JSON.stringify([ledgerText, registryText])).digest("hex");
+}
+
+/** Stable source-qualified sale projection; detect duplicate or malformed original records. */
+function reviewedSaleDigestOf(sales) {
+  if (!Array.isArray(sales)) throw new TypeError("Reviewed sales must be an array.");
+  const columns = ["sourceId", "date", "payer", "amount", "currency", "account", "payerClass"];
+  const rows = sales.map((sale) => columns.map((column) => {
+    const value = sale?.[column];
+    if (typeof value !== "string" || value.length === 0)
+      throw new TypeError(`Reviewed x402 sale lacks ${column}.`);
+    return value;
+  }));
+  if (new Set(rows.map((row) => row[0])).size !== rows.length)
+    throw new Error("Duplicate x402 source IDs require source-book reconciliation.");
+  if (rows.some((row) => !/^[0-9]+(?:[.][0-9]+)?$/u.test(row[3])))
+    throw new TypeError("Reviewed x402 sale has a malformed decimal amount.");
+  rows.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+  return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+}
+
 /** A custodian-approved reclassification of legacy payment-derived income.
  * Retain the authored cash asset and transfer identity; hold the consideration
  * as pending receipts. Paying from outside the Group cannot establish acceptance.
  * No original authored entry is modified and no ruling is inferred from cash. */
-export function reversalEntriesOf(sales, ruling) {
+export function reversalEntriesOf(sales, ruling, { ledgerText, registryText } = {}) {
   if (ruling?.kind !== "561-group.books-ruling" || ruling.decision !== "approve") return [];
+  // Keep historical unfenced rulings as evidence, but never reinterpret their
+  // approvals as authority to reclassify an arbitrary later book edition.
+  if (typeof ruling.sourceEdition !== "string" || typeof ruling.reviewedSalesDigest !== "string")
+    throw new Error("Unfenced historical books ruling: manual source-qualified receiving required.");
+  if (booksSourcesEditionOf(ledgerText, registryText) !== ruling.sourceEdition)
+    throw new Error("The source book or wallet registry edition changed after the approved ruling.");
+  const observed = x402SalesOf(ledgerText, JSON.parse(registryText));
+  if (reviewedSaleDigestOf(observed) !== reviewedSaleDigestOf(sales))
+    throw new Error("Reversal sales differ from the original source reading.");
   const reversed = new Set(ruling.entries ?? []);
   const handed = new Set(ruling.handed ?? []);
+  if (reversed.size !== (ruling.entries ?? []).length ||
+      handed.size !== (ruling.handed ?? []).length ||
+      [...reversed].some((id) => handed.has(id)))
+    throw new Error("Approved ruling has duplicate or overlapping source identities.");
+  const selected = sales.filter((sale) => reversed.has(sale.sourceId) || handed.has(sale.sourceId));
+  if (selected.length !== reversed.size + handed.size ||
+      reviewedSaleDigestOf(selected) !== ruling.reviewedSalesDigest)
+    throw new Error("Approved ruling no longer matches the exact reviewed sales.");
   const date = String(ruling.at).slice(0, 10);
-  return sales.filter((sale) => reversed.has(sale.sourceId) || handed.has(sale.sourceId)).map((sale) => [
+  return selected.map((sale) => [
     `${date} * "reclassify payment-derived x402 income as pending cash"`,
     `  ruling: "${ruling.id}"`,
     `  reverses: "${sale.sourceId}"`,
@@ -140,7 +182,8 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
     // The identity-based Work/ruling key remains stable for historical custody.
     // Separately fence approval to BOTH source editions: unchanged source IDs
     // do not imply unchanged amounts, denomination, or registry evidence.
-    const edition = createHash("sha256").update(JSON.stringify([ledgerText, registryText])).digest("hex");
+    reviewedSaleDigestOf(sales); // refuse ambiguous or malformed source before the bookkeeper review
+    const edition = booksSourcesEditionOf(ledgerText, registryText);
     return { id, sales, edition };
   };
   const ruled = (id) => rulings !== undefined && existsSync(join(rulings, `${id}.json`));
@@ -212,6 +255,7 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
         // Legacy `handed` denotes unresolved non-internal-registry entries,
         // not evidence that their payer was external.
         by: accountHolder, entries: own, handed: unresolved,
+        sourceEdition: current.edition, reviewedSalesDigest: reviewedSaleDigestOf(current.sales),
       }, null, 2)}\n`, { mode: 0o600 });
       renameSync(temporary, path);
       return { title: decision === "approve" ? "Reversal approved" : "Kept as they are",
