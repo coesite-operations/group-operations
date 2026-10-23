@@ -64,8 +64,7 @@ const WALLET_REGISTRY = ["lib", "emsenn", "services", "561-group", "services", "
 /**
  * The x402 sales the authored ledger books (the retired seller-booking route wrote them there), each
  * `{sourceId, date, payer, amount, currency, account, selfPaid}`: `selfPaid` when the wallet
- * registry names the payer as emsenn's founder wallet or an org wallet. Both are within the
- * 561 Group agent swarm's economic perimeter: moving money between them is no outside sale.
+ * registry identifies the payer as either founder (emsenn) or org (the agent swarm).\n * Both are within the 561 Group swarm economic perimeter, not external sales.
  */
 export function x402SalesOf(ledgerText, registry) {
   const own = new Set((registry?.wallets ?? []).filter((wallet) => wallet.owner === "org" || wallet.owner === "founder").map((wallet) => String(wallet.address).toLowerCase()));
@@ -77,19 +76,20 @@ export function x402SalesOf(ledgerText, registry) {
   });
 }
 
-/** Retired seller route's supposed sales paid by wallets within the same emsenn/swarm economic perimeter. */
+/** Legacy booked sales paid by a wallet inside the emsenn/561 Group economic perimeter. */
 export const selfPaidSalesOf = (ledgerText, registry) => x402SalesOf(ledgerText, registry).filter((sale) => sale.selfPaid);
 
 /**
- * Wallets the books and the registry disagree about: an address the authored ledger holds in the
- * Group's custody (an `Assets:…:Custody:` account's note naming it) that the key-management registry
- * says is the founder's. Each is `{address, ledgerAccount, registryOwner}`.
+ * Compatibility query for historical legal-owner disputes. An accounting
+ * posting to Assets:...:Custody is an operational record, not evidence that
+ * someone other than emsenn legally owns the wallet. The "founder" and "org"
+ * labels both belong to emsenn's 561 Group agent-swarm economic perimeter.
+ * Without independent, explicit conflicting title evidence there is no
+ * reportable legal-owner disagreement. Preserve original wallet registry
+ * labels; do not demand a false binary ownership correction.
  */
-export function custodyDisagreementsOf(ledgerText, registry) {
-  const owners = new Map((registry?.wallets ?? []).map((wallet) => [String(wallet.address).toLowerCase(), wallet.owner]));
-  const held = [...ledgerText.matchAll(/^\d{4}-\d\d-\d\d note (Assets:[^\s]*Custody[^\s]*) "EVM address (0x[0-9a-fA-F]{40})"/gmu)];
-  return held.flatMap(([, ledgerAccount, address]) => owners.get(address.toLowerCase()) === "founder"
-    ? [Object.freeze({ address, ledgerAccount, registryOwner: "founder" })] : []);
+export function custodyDisagreementsOf(_ledgerText, _registry) {
+  return [];
 }
 
 /** A custodian-approved reclassification of legacy payment-derived income.
@@ -123,7 +123,8 @@ export function reversalEntriesOf(sales, ruling) {
 export function booksObligations({ accountHolder, repositoryRoot, env = process.env }) {
   if (typeof accountHolder !== "string" || accountHolder === "") throw new TypeError("books obligations need the character who keeps the books");
   const ledgerPath = env.METROPLAT_LEDGER_JOURNAL ?? join(repositoryRoot ?? process.cwd(), ...LEDGER);
-  const registryPath = join(repositoryRoot ?? process.cwd(), ...WALLET_REGISTRY);
+  const registryPath = env.GROUP_WALLET_REGISTRY ?? join(repositoryRoot ?? process.cwd(), ...WALLET_REGISTRY);
+  if (typeof registryPath !== "string" || registryPath.trim() === "") throw new TypeError("GROUP_WALLET_REGISTRY must be a nonempty path");
   const rulings = env.METROPLAT_WEB_DATA_DIR ? join(env.METROPLAT_WEB_DATA_DIR, "records", "rulings") : undefined;
   const pending = () => {
     const sales = x402SalesOf(readFileSync(ledgerPath, "utf8"), JSON.parse(readFileSync(registryPath, "utf8")));
@@ -131,24 +132,6 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
     return { id, sales };
   };
   const ruled = (id) => rulings !== undefined && existsSync(join(rulings, `${id}.json`));
-  // One seed has one holder: the question names each custody credential once, and is asked once for
-  // all of them, since the registry marked them by one rule.
-  const credentialOf = (ledgerAccount) => /:Custody:([^:]+)/u.exec(ledgerAccount)?.[1] ?? ledgerAccount;
-  const custodyOwed = () => {
-    const byCredential = new Map();
-    for (const wallet of custodyDisagreementsOf(readFileSync(ledgerPath, "utf8"), JSON.parse(readFileSync(registryPath, "utf8")))) {
-      // Founder-held wallets belong to the same swarm economic perimeter.
-      // A group operating-book entry does not prove a distinct legal owner.
-      // Do not force a binary "group versus founder" ownership rewrite.
-      if (wallet.registryOwner === "founder") continue;
-      const credential = credentialOf(wallet.ledgerAccount);
-      (byCredential.get(credential) ?? byCredential.set(credential, []).get(credential)).push(wallet);
-    }
-    if (byCredential.size === 0) return [];
-    const credentials = [...byCredential.keys()].sort();
-    const id = `custody-${createHash("sha256").update(credentials.join("\n")).digest("hex").slice(0, 16)}`;
-    return ruled(id) ? [] : [{ id, credentials, byCredential }];
-  };
   return {
     id: "books",
     title: "The Group's books",
@@ -157,28 +140,12 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       const own = sales.filter((sale) => sale.selfPaid);
       const outside = sales.filter((sale) => !sale.selfPaid);
       const total = (list) => list.reduce((sum, sale) => sum + Number(sale.amount), 0).toFixed(3);
-      const custody = custodyOwed();
       return [
         ...(sales.length === 0 || ruled(id) ? [] : [{ id, to: [accountHolder], title: `Decide whether to defer ${sales.length} payment-derived income entries`,
-          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by an emsenn/swarm-controlled wallet buying its own listings for the x402 Bazaar, and a new outside sale needs a payer outside that economic perimeter. `}${outside.length === 0 ? "" : `The ${outside.length} paid by other wallets (${total(outside)} ${outside[0].currency}) also lack a qualified delivery judgment. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
-        ...custody.map((entry) => ({ id: entry.id, to: [accountHolder], title: `Say whose wallets ${entry.credentials.length} keys hold`,
-          why: `The main ledger holds the wallets of ${entry.credentials.length} keys (${entry.credentials.join(", ")}) in the Group's custody, but the wallet registry marks them as the founder's own. One of them receives the x402 market's sales. Only their holder can say which is true, and the books are wrong until the records agree.` })),
+          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${outside.length === 0 ? "" : `The ${outside.length} paid by other wallets (${total(outside)} ${outside[0].currency}) also lack a qualified delivery judgment. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
       ];
     },
     start(id) {
-      if (id.startsWith("custody-")) {
-        const entry = custodyOwed().find((candidate) => candidate.id === id);
-        if (entry === undefined) throw new Error("This was already answered. Go back to the list.");
-        return {
-          memo: { id, credentials: entry.credentials },
-          steps: [
-            `The main ledger holds, in the Group's custody, wallets of these keys: ${entry.credentials.map((credential) => `${credential} (${entry.byCredential.get(credential).map((wallet) => wallet.address).join(", ")})`).join("; ")}.`,
-            "The key-management wallet registry marks all of them as the founder's own. 0x32886F6F… is the payout address of the 561 Group's x402 market.",
-            "Type group if every one is the Group's, founder if every one is yours, or the names of the keys that are yours, separated by commas. The records that are wrong are then corrected to match, citing your answer.",
-          ],
-          input: { label: "group, founder, or your keys", placeholder: "group", description: "group, founder, or e.g. XYO-WALLET, MOONSHOT-WALLET" },
-        };
-      }
       const current = pending();
       if (current.id !== id) throw new Error("The ledger changed since this was listed. Go back and open it again.");
       const own = current.sales.filter((sale) => sale.selfPaid);
@@ -186,7 +153,7 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       return {
         memo: { id, sales: own.map((sale) => sale.sourceId), handed: outside.map((sale) => sale.sourceId) },
         steps: [
-          ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the registry holds within emsenn's and the swarm's economic perimeter, to buy listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reclassifies their income as pending receipts without changing the cash asset.`]),
+          ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the house registry attributes to emsenn or the swarm, to buy its own listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reclassifies their income as pending receipts without changing the cash asset.`]),
           ...(outside.length === 0 ? [] : [`${outside.length} were paid by an outside buyer (${[...new Set(outside.map((sale) => sale.payer))].join(", ")}). Approving reclassifies their income as pending receipts. Cash remains in the authored asset account; delivery and customer acceptance are unobserved.`]),
           "Each reversal is dated today and cites your ruling. Nothing already booked is edited.",
           "Type approve, or decline to keep them as they are, and press the button.",
@@ -196,18 +163,27 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
     },
     finish(id, memo, value) {
       const decision = String(value ?? "").trim().toLowerCase();
-      const custody = id.startsWith("custody-");
-      const named = custody ? String(value ?? "").split(",").map((name) => name.trim().toUpperCase()).filter(Boolean) : [];
-      const founders = !custody ? [] : decision === "founder" ? memo?.credentials ?? [] : decision === "group" ? [] : named;
-      if (custody && decision !== "group" && decision !== "founder" && (named.length === 0 || named.some((name) => !(memo?.credentials ?? []).includes(name)))) throw new Error(`Type group, founder, or names from: ${(memo?.credentials ?? []).join(", ")}.`);
-      if (!custody && decision !== "approve" && decision !== "decline") throw new Error("Type approve or decline.");
+      if (decision !== "approve" && decision !== "decline") throw new Error("Type approve or decline.");
+      const current = pending();
+      if (current.id !== id) throw new Error("The ledger changed since this was listed. Go back and open it again.");
+      if (ruled(id)) throw new Error("This was already answered. Go back to the list.");
+      const own = current.sales.filter(sale => sale.selfPaid).map(sale => sale.sourceId).sort();
+      const outside = current.sales.filter(sale => !sale.selfPaid).map(sale => sale.sourceId).sort();
+      const proposedOwn = [...(memo?.sales ?? [])].sort();
+      const proposedOutside = [...(memo?.handed ?? [])].sort();
+      if (JSON.stringify(own) !== JSON.stringify(proposedOwn) ||
+          JSON.stringify(outside) !== JSON.stringify(proposedOutside)) {
+        throw new Error("The source payment identities no longer match the received request.");
+      }
       if (rulings === undefined) throw new Error("This node keeps no web data, so it cannot record the ruling.");
       mkdirSync(rulings, { recursive: true });
       const path = join(rulings, `${id}.json`);
       const temporary = `${path}.${process.pid}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify({ kind: "561-group.books-ruling", id, decision, at: new Date().toISOString(), by: accountHolder, entries: memo?.sales ?? [], ...(custody ? {} : { handed: memo?.handed ?? [] }), ...(custody ? { credentials: memo?.credentials ?? [], founders, group: (memo?.credentials ?? []).filter((name) => !founders.includes(name)) } : {}) }, null, 2)}\n`, { mode: 0o600 });
+      writeFileSync(temporary, `${JSON.stringify({
+        kind: "561-group.books-ruling", id, decision, at: new Date().toISOString(),
+        by: accountHolder, entries: own, handed: outside,
+      }, null, 2)}\n`, { mode: 0o600 });
       renameSync(temporary, path);
-      if (custody) return { title: founders.length === 0 ? "All the Group's" : `${founders.length} yours`, content: "Recorded. The records that disagree will be corrected to match, citing this answer." };
       return { title: decision === "approve" ? "Reversal approved" : "Kept as they are",
         content: decision === "approve" ? "Recorded. The reversing entries will be landed in the main ledger citing this ruling." : "Recorded. The entries stay as booked, and this will not be asked again for these entries." };
     },
