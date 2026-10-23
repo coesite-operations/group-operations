@@ -50,8 +50,8 @@ test("real original node-job-run starts the unique declared pulse, not a hard-co
   const bin = join(f.root, "bin");
   mkdirSync(bin);
   const invoked = join(f.root, "invoked.json");
-  writeFileSync(join(bin, "systemctl"), "#!" + process.execPath + "\\nprocess.stdout.write('inactive\\\\n');\\n", { mode: 0o700 });
-  writeFileSync(join(bin, "systemd-run"), "#!" + process.execPath + "\\nrequire('node:fs').writeFileSync(" + JSON.stringify(invoked) + ", JSON.stringify(process.argv.slice(2)));\\n", { mode: 0o700 });
+  writeFileSync(join(bin, "systemctl"), "#!" + process.execPath + "\nprocess.stdout.write('inactive\\n');\n", { mode: 0o700 });
+  writeFileSync(join(bin, "systemd-run"), "#!" + process.execPath + "\nrequire('node:fs').writeFileSync(" + JSON.stringify(invoked) + ", JSON.stringify(process.argv.slice(2)));\n", { mode: 0o700 });
   const originalPath = process.env.PATH;
   const originalFleet = process.env.NODE_JOB_FLEET;
   process.env.PATH = bin + delimiter + originalPath;
