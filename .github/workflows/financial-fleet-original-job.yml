@@ -7,6 +7,7 @@ on:
       - 'src/financial-fleet-job-selection.mjs'
       - 'test/financial-fleet-job-selection.test.mjs'
       - 'test/financial-fleet-original-provider.test.mjs'
+      - 'test/financial-fleet-native-venue-contract.test.mjs'
       - 'package.json'
       - '.github/workflows/financial-fleet-original-job.yml'
   push:
@@ -37,5 +38,6 @@ jobs:
           node --check src/trading-fleet-operations.mjs
           node --check src/financial-fleet-job-selection.mjs
           node --check test/financial-fleet-original-provider.test.mjs
+          node --check test/financial-fleet-native-venue-contract.test.mjs
       - name: Run actual original-deployment selector with negative cases
         run: npm run test:financial-fleet
