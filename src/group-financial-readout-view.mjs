@@ -75,8 +75,20 @@ export function x402SalesOf(ledgerText, registry) {
     /^\d{4}-\d\d-\d\d \* /u.test(block) &&
     /^[ \t]+Income:Sales:X402(?::\S+)?(?:\s|$)/mu.test(block) &&
     !/^[ \t]+reverses: /mu.test(block)).map((block) => {
-    const payer = /payer: "([^"]+)"/u.exec(block)?.[1]?.toLowerCase();
-    const sourceId = /source_id: "([^"]+)"/u.exec(block)?.[1];
+    // Transaction-level metadata precedes postings. Never treat comments or
+    // posting-level metadata as the source witness of a financial event.
+    const lines = block.split("\n");
+    const firstPosting = lines.findIndex((line) =>
+      /^[ \t]+(?:Assets|Liabilities|Equity|Income|Expenses):/u.test(line));
+    const header = lines.slice(1, firstPosting < 0 ? lines.length : firstPosting);
+    const payerLines = header.filter((line) => /^[ \t]+payer:/u.test(line));
+    const sourceIdLines = header.filter((line) => /^[ \t]+source_id:/u.test(line));
+    const payer = payerLines.length === 1
+      ? /^[ \t]+payer:[ \t]+"([^"\n]+)"[ \t]*$/u.exec(payerLines[0])?.[1]?.toLowerCase()
+      : undefined;
+    const sourceId = sourceIdLines.length === 1
+      ? /^[ \t]+source_id:[ \t]+"([^"\n]+)"[ \t]*$/u.exec(sourceIdLines[0])?.[1]
+      : undefined;
     // An omitted or unreadable original posting is UNKNOWN, never a zero sale.
     // Require exactly one unambiguous historical X402 income leg per sale.
     const postings = block.split("\n").map((line) => line.trim())
