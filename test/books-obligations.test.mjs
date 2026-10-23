@@ -63,6 +63,21 @@ test("unknown x402 payer provenance never becomes an asserted external buyer", (
   assert.deepEqual(started.memo, {
     id: due.id, sales: ["evm:own"], handed: ["evm:stranger"],
   }, "old ruling field identities stay stable; 'handed' does not verify outsider status");
+
+  // A wallet-registry visibility change cannot reuse the old consent packet:
+  // the Work id is source-payment-stable, but the original pending class split
+  // must be re-assayed before a competent bookkeeper signs any new ruling.
+  writeFileSync(registryPath, JSON.stringify({ wallets: [] }));
+  const [emptyDue] = books.obligations();
+  assert.ok(emptyDue, "no data in the registry is not a zero-income determination");
+  const nowUnresolved = books.start(emptyDue.id);
+  assert.deepEqual(nowUnresolved.memo, {
+    id: due.id, sales: [], handed: ["evm:own", "evm:stranger"],
+  });
+  assert.match(nowUnresolved.steps.join("\n"), /origin is UNRESOLVED/u);
+  assert.throws(() => books.finish(due.id, started.memo, "approve"),
+    /source payment identities no longer match/u,
+    "stale positive-internal classification must not authorize a changed ruling");
   assert.equal(readFileSync(ledgerPath, "utf8"), ledger,
     "classification must not mutate the original book or create a financial posting");
 });
