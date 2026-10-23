@@ -89,6 +89,39 @@ test("emsenn founder and org wallets both count as internal to the swarm, but an
   }
 });
 
+test("malformed Base payer and registry entries never impersonate an internal wallet", () => {
+  for (const [payer, wallet] of [
+    ["undefined", { owner: "org" }],
+    ["null", { owner: "founder", address: null }],
+    ["[object object]", { owner: "org", address: {} }],
+  ]) {
+    const malformed = sale("2026-10-23", payer, "evm:malformed-address");
+    assert.throws(() => x402SalesOf(malformed, { wallets: [wallet] }),
+      /Incomplete or ambiguous x402 sale posting/u,
+      "neither a coerced registry value nor an untyped payment payer is a wallet identity");
+    assert.throws(() => x402SalesOf(ledger + "\n" + malformed, { wallets: [wallet] }),
+      /Incomplete or ambiguous x402 sale posting/u,
+      "a valid sale must not hide one malformed payer in a bookkeeper reading");
+  }
+  assert.equal(x402SalesOf(sale("2026-10-23", OWN, "evm:real"),
+    { wallets: [{ owner: "founder", address: OWN.toUpperCase() }] })[0].payerClass,
+  "registered-internal", "typed mixed-case addresses retain positive internal attribution");
+  assert.equal(x402SalesOf(sale("2026-10-23", STRANGER, "evm:unknown"),
+    { wallets: [{ owner: "org" }] })[0].payerClass,
+  "unresolved", "a malformed internal registry row does not prove an outside origin");
+
+  const root = mkdtempSync(join(tmpdir(), "books-untyped-payer-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "wallet-registry.json");
+  writeFileSync(ledgerPath, ledger + "\n" + sale("2026-10-23", "undefined", "evm:invalid"));
+  writeFileSync(registryPath, JSON.stringify({ wallets: [{ owner: "org" }] }));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath } });
+  assert.throws(() => books.obligations(),
+    /Incomplete or ambiguous x402 sale posting/u,
+    "an actual bookkeeper consumer must refuse an incomplete mixed ledger");
+});
+
 test("unknown x402 payer provenance never becomes an asserted external buyer", () => {
   const known = x402SalesOf(ledger, registry);
   assert.deepEqual(known.map(x => [x.sourceId, x.selfPaid, x.payerClass]), [
