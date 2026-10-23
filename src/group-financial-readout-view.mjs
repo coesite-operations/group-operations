@@ -159,7 +159,7 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       };
       return [
         ...(sales.length === 0 || ruled(id) ? [] : [{ id, to: [accountHolder], title: `Decide whether to defer ${sales.length} payment-derived income entries`,
-          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${totalsByUnit(own)} ${own[0].currency}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${unresolved.length === 0 ? "" : `${unresolved.length} payer wallets (${totalsByUnit(unresolved)} ${unresolved[0].currency}) are not in the configured internal-wallet registry; their external/related-party status is unverified and delivery judgment is also missing. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
+          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${totalsByUnit(own)}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${unresolved.length === 0 ? "" : `${unresolved.length} payer wallets (${totalsByUnit(unresolved)}) are not in the configured internal-wallet registry; their external/related-party status is unverified and delivery judgment is also missing. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
       ];
     },
     start(id) {
