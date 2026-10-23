@@ -82,7 +82,9 @@
     "test:node-jobs": "node --test --test-isolation=none test/node-job-instance.test.mjs test/node-job-binding.test.mjs test/node-job-operation.test.mjs test/node-job-execution.test.mjs",
     "test:capacity-flow": "node --test test/capacity-flow-operation.test.mjs",
     "test:requirements": "node --test test/requirement-cells.test.mjs test/requirement-satisfaction.test.mjs",
-    "plan:operating-cell": "plan-operating-cell"
+    "plan:operating-cell": "plan-operating-cell",
+    "test:financial-fleet": "node --test test/financial-fleet-job-selection.test.mjs",
+    "test:financial-fleet:native": "node --test test/financial-fleet-original-provider.test.mjs"
   },
   "repository": {
     "type": "git",
