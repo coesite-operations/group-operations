@@ -162,8 +162,8 @@ test("bookkeeper readout does not lose high-precision totals or admit malformed 
   assert.match(books.obligations()[0].why, /9007199254740994 USD/u,
     "the source-owned exact decimal arithmetic must not pass through IEEE-754 Number");
   writeFileSync(ledgerPath, priced("evm:malformed", "1..0"));
-  assert.throws(() => books.obligations(), /decimal: not a plain decimal string/u,
-    "a malformed source amount is an explicit failure, not a fabricated zero or rounded sum");
+  assert.throws(() => books.obligations(), /Incomplete or ambiguous x402 sale posting/u,
+    "the original source parser must refuse malformed postings before exact-number aggregation");
 });
 
 test("unchanged event identity never authorizes stale bookkeeper decisions after source edits", () => {
