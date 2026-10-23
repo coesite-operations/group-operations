@@ -4,6 +4,7 @@ import {FINANCIAL_FLEET_PULSE_JOB,selectFinancialFleetPulseDeployment} from './f
 import {operation} from '@red-cup-engineering/computer-system-engine/rpc/operation';
 import {tradingFleetNetworkSources} from './trading-fleet-network.mjs';
 import {alpacaLiveTools} from '@red-cup-engineering/alpaca-principal-actuation-service/mcp';
+import {schemaFrom} from '@red-cup-engineering/json-schema-services-section/contracts';
 import {weatherNetworkSources,weatherTools} from './weather-network.mjs';
 import {readFinancialFleetEvidence} from './financial-fleet-evidence.mjs';
 
@@ -31,7 +32,7 @@ export function tradingFleetOperations(binding,installedOptions={}){
   const supplier=alpacaLiveTools.find(item=>item.name===tool);
   return operation({
   verb,inputFormat:'json',outputFormat:'json',
-  ...(supplier===undefined?{}:{domain:supplier.inputSchema}),
+  ...(supplier===undefined?{}:{domain:schemaFrom({$id:'group-operations/financial-fleet/'+tool+'/input',...supplier.inputSchema})}),
   summary:supplier?.description??'Use the custody-bound financial fleet tool '+tool+'. Current venue authority remains required.',
   reads:['financial-fleet/custody-bound-observations'],writes:tool==='base_fleet_read_record'?[]:[write?'financial-fleet/admitted-order-effects':'financial-fleet/evidence'],
   effects:{class:write?'external':tool==='base_fleet_read_record'?'host-read':'journal-write',replay:tool==='base_fleet_read_record'?'safe':'coordinated',coordination:tool==='base_fleet_read_record'?'coordination-free':'coordination-required',deterministic:'unmeasured',totality:'partial'},
