@@ -85,7 +85,7 @@
     "test:requirements": "node --test test/requirement-cells.test.mjs test/requirement-satisfaction.test.mjs",
     "plan:operating-cell": "plan-operating-cell",
     "test:financial-fleet": "node --test test/financial-fleet-job-selection.test.mjs",
-    "test:financial-fleet:native": "node --test test/financial-fleet-original-provider.test.mjs"
+    "test:financial-fleet:native": "node --test test/financial-fleet-original-provider.test.mjs test/financial-fleet-native-venue-contract.test.mjs"
   },
   "repository": {
     "type": "git",
