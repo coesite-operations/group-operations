@@ -70,7 +70,12 @@ const WALLET_REGISTRY = ["lib", "emsenn", "services", "561-group", "services", "
  * the original payment/commerce witness alone can qualify outside-party status.
  */
 export function x402SalesOf(ledgerText, registry) {
-  const own = new Set((registry?.wallets ?? []).filter((wallet) => wallet.owner === "org" || wallet.owner === "founder").map((wallet) => String(wallet.address).toLowerCase()));
+  // This legacy x402 book records Base/EVM payer addresses. Only a typed
+  // address can witness registration: String(undefined) and String(null) cannot.
+  const evmAddress = (value) => typeof value === "string" && /^0x[a-f0-9]{40}$/iu.test(value);
+  const own = new Set((registry?.wallets ?? [])
+    .filter((wallet) => (wallet?.owner === "org" || wallet?.owner === "founder") && evmAddress(wallet.address))
+    .map((wallet) => wallet.address.toLowerCase()));
   return ledgerText.split(/\n(?=\d{4}-\d\d-\d\d )/u).filter((block) =>
     /^\d{4}-\d\d-\d\d \* /u.test(block) &&
     /^[ \t]+Income:Sales:X402(?::\S+)?(?:\s|$)/mu.test(block) &&
@@ -96,7 +101,7 @@ export function x402SalesOf(ledgerText, registry) {
     const income = postings.length === 1
       ? /^(Income:Sales:X402:\S+)[ \t]+(-[0-9]+(?:\.[0-9]+)?)[ \t]+([A-Z][A-Z0-9._-]*)$/u.exec(postings[0])
       : null;
-    if (!payer || !sourceId || !income || !/[1-9]/u.test(income[2]))
+    if (!payer || !evmAddress(payer) || !sourceId || !income || !/[1-9]/u.test(income[2]))
       throw new Error("Incomplete or ambiguous x402 sale posting: source ID, payer, one nonzero negative income leg and denomination required.");
     const registeredInternal = own.has(payer);
     return Object.freeze({ sourceId, date: block.slice(0, 10), payer, amount: income[2].slice(1),
