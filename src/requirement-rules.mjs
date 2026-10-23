@@ -11,8 +11,11 @@
  * A design rule adopted over an estate that already breaks it records today's violations as a
  * baseline charged contested (Huidu Guanli: known, recorded, owed). Its detector fails only on a
  * violation the baseline does not hold, so a change may remove violations and never add one.
+ *   DRC-2 one owner: no capability is held by two house packages of an assembled closure.
  *   DRC-4 signed cells: new record files are signed cells, not plain JSON.
  *   DRC-5 order: every merged change names the requirement it serves.
+ * DRC-4 and DRC-5 are detected here. DRC-2's detector is its owner's check, run where a closure is
+ * assembled; its result is the reading this section ratchets (`violationsOf`).
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -114,12 +117,31 @@ export function unorderedMerges(repositoryRoot, { since }) {
   });
 }
 
+/** The rules whose detector is another owner's check: the command that reads it, and its violations in that reading. */
+export const CHECKED_ELSEWHERE = Object.freeze({
+  "drc-2-one-owner": Object.freeze({
+    check: "check-closure-divergent-copies '{\"closure\":\"<assembled node_modules>\"}' (@red-cup-engineering/computer-systems-fabrication-engineering-services-section)",
+    violations: (reading) => {
+      if (reading?.kind !== "check-closure-divergent-copies" || !Array.isArray(reading.copies)) throw new TypeError("drc-2-one-owner reads a check-closure-divergent-copies result");
+      return reading.copies.map((copy) => copy.violation);
+    },
+  }),
+});
+
+/** A rule's current violations: detected here, or read from its owner's check result (`reading`). */
+export function violationsOf({ repositoryRoot, rule, reading }) {
+  if (rule === "drc-4-signed-cells") return plainRecordFiles(repositoryRoot);
+  if (rule === "drc-5-order") return unorderedMerges(repositoryRoot, { since: DRC5_ADOPTED });
+  const elsewhere = CHECKED_ELSEWHERE[rule];
+  if (elsewhere === undefined) throw new TypeError(`no detector for ${rule}`);
+  if (reading === undefined) throw new TypeError(`${rule} is checked by ${elsewhere.check}; pass its result as the reading`);
+  return elsewhere.violations(reading);
+}
+
 /** Run a rule's detector against its baseline: { rule, violations, added, removed, ok }. */
-export function detect({ repositoryRoot, rule, scratch }) {
+export function detect({ repositoryRoot, rule, scratch, reading }) {
   const baseline = baselineOf({ repositoryRoot, rule, scratch });
-  const current = rule === "drc-4-signed-cells" ? plainRecordFiles(repositoryRoot)
-    : rule === "drc-5-order" ? unorderedMerges(repositoryRoot, { since: DRC5_ADOPTED })
-      : (() => { throw new TypeError(`no detector for ${rule}`); })();
+  const current = violationsOf({ repositoryRoot, rule, reading });
   const held = new Set(baseline?.violations ?? []);
   const added = current.filter((item) => !held.has(violationDigest(item)));
   const present = new Set(current.map(violationDigest));

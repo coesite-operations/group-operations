@@ -13,8 +13,9 @@
  *   group-requirements check-pull-request [--repository ROOT] < pull-request-body.md
  *   group-requirements brief [--repository ROOT] [--hook]
  *   group-requirements record-break --seat SEAT [--repository ROOT] < break.json   ({ breakClass, evidence[], repair?, detector? })
- *   group-requirements baseline --rule drc-4-signed-cells|drc-5-order --seat SEAT [--repository ROOT]
- *   group-requirements drc --rule drc-4-signed-cells|drc-5-order [--repository ROOT]   (exit 1 on a violation the baseline does not hold)
+ *   group-requirements baseline --rule drc-2-one-owner|drc-4-signed-cells|drc-5-order --seat SEAT [--repository ROOT] [--reading FILE|-]
+ *   group-requirements drc --rule drc-2-one-owner|drc-4-signed-cells|drc-5-order [--repository ROOT] [--reading FILE|-]   (exit 1 on a violation the baseline does not hold)
+ *     --reading is the result of a rule checked by its owner (drc-2-one-owner: check-closure-divergent-copies), from a file or stdin.
  *
  * A requirement's input: { id, name, section (repository-relative path of the owning section),
  * raisedBy, asks (the raiser's words, verbatim), sources: [{ words, session?, at?, locator?,
@@ -34,7 +35,7 @@ import { readPools, writeJuly } from "../src/requirement-pools.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { maintainRequirements } from "../src/requirement-maintenance.mjs";
 import { pullRequestOrder } from "../src/requirement-orders.mjs";
-import { detect, plainRecordFiles, recordAssemblyBreakJuly, recordBaseline, unorderedMerges, DRC5_ADOPTED } from "../src/requirement-rules.mjs";
+import { detect, recordAssemblyBreakJuly, recordBaseline, violationsOf } from "../src/requirement-rules.mjs";
 
 const [command, ...rest] = process.argv.slice(2);
 const options = {};
@@ -48,6 +49,8 @@ const seat = () => {
   return options.seat;
 };
 const stdin = () => readFileSync(0, "utf8");
+/** An owner's check result for a rule it checks (--reading FILE, or - for stdin). */
+const reading = () => typeof options.reading !== "string" ? undefined : JSON.parse(readFileSync(options.reading === "-" ? 0 : options.reading, "utf8"));
 const print = (value) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 const readAll = (kind) => {
   const scratch = mkdtempSync(join(tmpdir(), "group-requirements-"));
@@ -149,15 +152,14 @@ try {
     }
     case "baseline": {
       const rule = options.rule;
-      const violations = rule === "drc-4-signed-cells" ? plainRecordFiles(repositoryRoot()) : rule === "drc-5-order" ? unorderedMerges(repositoryRoot(), { since: DRC5_ADOPTED }) : undefined;
-      if (violations === undefined) throw new TypeError("--rule is drc-4-signed-cells or drc-5-order");
+      const violations = violationsOf({ repositoryRoot: repositoryRoot(), rule, reading: reading() });
       print(recordBaseline({ repositoryRoot: repositoryRoot(), rule, violations, seat: seat() }));
       break;
     }
     case "drc": {
       const scratch = mkdtempSync(join(tmpdir(), "group-requirements-"));
       try {
-        const verdict = detect({ repositoryRoot: repositoryRoot(), rule: options.rule, scratch });
+        const verdict = detect({ repositoryRoot: repositoryRoot(), rule: options.rule, scratch, reading: reading() });
         print({ ...verdict, added: verdict.added.slice(0, 50) });
         if (!verdict.ok) process.exitCode = 1;
       } finally { rmSync(scratch, { recursive: true, force: true }); }

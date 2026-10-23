@@ -8,7 +8,7 @@ import { REQUIREMENT, REQUIREMENT_SECTION, RULING, existenceOnly, readGoverning,
 import { exercise, maintainRequirements, readingsOf } from "../src/requirement-maintenance.mjs";
 import { convertRequirements } from "../src/requirement-conversion.mjs";
 import { ordersNamed, pullRequestOrder } from "../src/requirement-orders.mjs";
-import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf } from "../src/requirement-rules.mjs";
+import { detect, plainRecordFiles, recordAssemblyBreak, recordAssemblyBreakJuly, recordBaseline, reArchitectureIdOf, violationsOf } from "../src/requirement-rules.mjs";
 import { addressHolds, addressed, carryToJuly, julyTypes, lostFrom, uncarried } from "../src/requirement-july.mjs";
 import { readPools, writeJuly } from "../src/requirement-pools.mjs";
 import { requirementOperations } from "../src/requirement-operations.mjs";
@@ -393,5 +393,23 @@ test("the current Coesite source-owned JSON pools bind real reads and writes wit
     assert.throws(() => writeJuly({ repositoryRoot: root, kind: "requirement",
       path: "../escaped-owner-root.json", record: makeRequirement("escaped-owner-root"), seat: SEAT, keyDirectory: keys }), /path must lie inside/u);
     assert.equal(existsSync(join(root, "..", "escaped-owner-root.json")), false);
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
+});
+
+test("DRC-2 ratchets the copies its owner's closure check reads: held copies pass, a new copy is refused", () => {
+  const { root, keys } = repository();
+  const reading = (...violations) => ({ kind: "check-closure-divergent-copies", copies: violations.map((violation) => ({ violation })) });
+  try {
+    assert.throws(() => violationsOf({ repositoryRoot: root, rule: "drc-2-one-owner" }), /check-closure-divergent-copies/u, "the rule names the check that reads it");
+    const today = reading("fp-peer-evidence @561-group/group-operations+@red-cup-engineering/feltos", "fp-relating @red-cup-engineering/computer-system-engine+@red-cup-engineering/relating");
+    const baseline = recordBaseline({ repositoryRoot: root, rule: "drc-2-one-owner", violations: violationsOf({ repositoryRoot: root, rule: "drc-2-one-owner", reading: today }), seat: SEAT, keyDirectory: keys });
+    assert.equal(baseline.charge, "contested");
+    const scratch = () => mkdtempSync(join(tmpdir(), "scratch-"));
+    const removed = detect({ repositoryRoot: root, rule: "drc-2-one-owner", scratch: scratch(), reading: reading("fp-relating @red-cup-engineering/computer-system-engine+@red-cup-engineering/relating") });
+    assert.equal(removed.ok, true);
+    assert.equal(removed.removed, 1, "a copy moved to its owner leaves the baseline owed one fewer");
+    const added = detect({ repositoryRoot: root, rule: "drc-2-one-owner", scratch: scratch(), reading: reading("fp-new @red-cup-engineering/feltos+@red-cup-engineering/organizing") });
+    assert.equal(added.ok, false);
+    assert.deepEqual(added.added, ["fp-new @red-cup-engineering/feltos+@red-cup-engineering/organizing"]);
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(keys, { recursive: true, force: true }); }
 });
