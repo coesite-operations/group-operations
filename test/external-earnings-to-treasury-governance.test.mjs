@@ -46,17 +46,19 @@ test("authored source selects exact original Work and a nonexecuting treasury ca
   assert.equal(catalog.campaigns.filter(x => x.id === campaign.id).length, 1);
   assert.deepEqual(campaign.stages.map(x => x.id), stages);
   assert.equal(new Set(campaign.parameters).size, campaign.parameters.length);
-  assert.ok(campaign.parameters.includes("bank_credit_ref"));
-  assert.ok(campaign.parameters.includes("independent_approval_ref"));
-  assert.ok(campaign.parameters.includes("destination_custody_ref"));
-  assert.ok(campaign.parameters.includes("venue_authority_ref"));
+  assert.deepEqual(campaign.parameters, ["work_ref", "principal", "consumer", "service_id",
+    "office_bundle", "acceptance_test", "inflow_basis_ref", "source_account_holder_ref",
+    "original_payment_ref"]);
+  assert.ok(!campaign.parameters.includes("bank_credit_ref"), "bank settlement is a later stage observation, not an intake prerequisite");
+  assert.ok(!campaign.parameters.includes("investment_mandate_ref"), "investment authorization is later Work, not a payment recognition precondition");
   const plan = planOperatingCell(base);
   assert.equal(plan.workRef, workRef);
   assert.equal(plan.campaigns.length, 1);
   assert.equal(plan.campaigns[0].campaignId, campaign.id);
   assert.equal(plan.campaigns[0].state, "unbound");
   assert.equal(plan.campaigns[0].stages.length, stages.length);
-  assert.ok(plan.campaigns[0].missingParameters.includes("bank_credit_ref"));
+  assert.deepEqual(plan.campaigns[0].missingParameters,
+    ["inflow_basis_ref", "source_account_holder_ref", "original_payment_ref"]);
   assert.equal(plan.retainedWork.writer, "native Work Arena work-open/work-move");
   assert.equal(plan.source.treeMembershipVerified, false);
   assert.equal(plan.effectsAuthorized, false);
@@ -115,15 +117,14 @@ test("wrong source, false work, or caller identity replacement cannot bind treas
     ...base, parameters: { invented_bank_credit: "urn:bogus" },
   }), /not declared by selected campaign/);
   assert.throws(() => planOperatingCell({
-    ...base, parameters: { bank_credit_ref: "malformed\nsecret" },
+    ...base, parameters: { inflow_basis_ref: "malformed\nsecret" },
   }), /extra parameters must be bounded/);
 });
 
 test("emsenn is the economic receiving principal for the agent swarm, not a disqualifying personal merchant", () => {
   const effect = id => campaign.stages.find(s => s.id === id).effect;
   for (const parameter of [
-    "swarm_economic_principal_ref", "receiving_policy_ref",
-    "inflow_basis_ref", "source_account_holder_ref"
+    "inflow_basis_ref", "source_account_holder_ref", "original_payment_ref"
   ]) assert.ok(campaign.parameters.includes(parameter), parameter);
   assert.match(effect("qualify-source-and-attribution"), /money paid to emsenn/);
   assert.match(effect("qualify-source-and-attribution"), /agent swarm/);
@@ -137,5 +138,7 @@ test("emsenn is the economic receiving principal for the agent swarm, not a disq
   assert.match(effect("assay-investable-surplus"), /no distinct Group incorporation or merchant is required/);
   assert.match(effect("obtain-competent-authorization"), /do not invent a separate 561 Group company approval requirement/);
   assert.match(effect("receive-and-reconcile"), /one receipt cannot become two earnings/);
-  assert.match(campaign.completion, /tips, gifts and other nonsale receipts/);
+  assert.match(campaign.completion, /may be a sale, tip, donation, gift, royalty/);
+  assert.match(campaign.completion, /does not wait for a formal proof/);
+  assert.match(campaign.completion, /separate later Work stages receive bank settlement/i);
 });
