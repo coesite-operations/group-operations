@@ -321,37 +321,9 @@
         "service_id",
         "office_bundle",
         "acceptance_test",
-        "swarm_economic_principal_ref",
-        "receiving_policy_ref",
         "inflow_basis_ref",
         "source_account_holder_ref",
-        "buyer_ref",
-        "buyer_authority_ref",
-        "offer_terms_ref",
-        "provider_service_ref",
-        "delivered_work_ref",
-        "customer_acceptance_ref",
-        "merchant_legal_principal_ref",
-        "original_payment_ref",
-        "external_payer_ref",
-        "beneficial_owner_ref",
-        "payout_beneficiary_ref",
-        "processor_settlement_ref",
-        "bank_credit_ref",
-        "book_reconciliation_ref",
-        "reversal_dispute_ref",
-        "restricted_cash_ref",
-        "tax_refund_reserve_ref",
-        "operating_runway_ref",
-        "unrestricted_cash_ref",
-        "capital_uses_comparison_ref",
-        "investment_mandate_ref",
-        "investment_sleeve_ref",
-        "independent_approval_ref",
-        "destination_custody_ref",
-        "venue_authority_ref",
-        "transfer_receipt_ref",
-        "independent_assay_ref"
+        "original_payment_ref"
       ],
       "stages": [
         {
@@ -420,7 +392,7 @@
           "effect": "Receive the actual external inflow, legal emsenn custody, source basis (sale/tip/gift/etc.), available reserves, separately approved allocations, returns and negative/refused effects in original source-owned records. Distinguish received external gross cash, realized earned revenue, loans, internal transfers, capital invested and investment P&L; one receipt cannot become two earnings merely by attributing it to the swarm."
         }
       ],
-      "completion": "One original outside monetary receipt to emsenn or another expressly authorized swarm receiving account has a distinct provider ID, source/classification, legal holder, original custody and witnessed state in the swarm's single economic readout; qualifying investable surplus is separated from attribution and from pending, restricted or noncash amounts. Treasury separately receives an authorized bounded allocation or an explicit refusal; tips, gifts and other nonsale receipts require no fabricated sale/customer acceptance. No catalog binding by itself moves or invests money.",
+      "completion": "An actual external payment to emsenn or another approved receiving account is source-identified, classified and recognized once in the swarm economic reading at the status the original provider supports. It may be a sale, tip, donation, gift, royalty or other actual basis, and does not wait for a formal proof, a customer when none is relevant, a future bank payout or an investment proposal. Separate later Work stages receive bank settlement, reserves, spendable headroom and independently authorized investment allocation or a refusal. No intake note, campaign binding, source code, or office title spends or moves money.",
       "kill": "Source payment is reversed/disputed; payer/source or emsenn owner authority is unproved; actual custody or mandate is revoked, or taxes, restrictions and reserved runway defeat eligibility. Halt new financial allocation proposals and preserve original liabilities, receipts and cash-classification history; never undo attribution by inventing a separate 561 Group legal merchant."
     }
   ]
