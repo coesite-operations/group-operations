@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { addDecimalStrings } from "@red-cup-engineering/exact-number-data-service/decimal-string";
 import { htmlRepr } from "@red-cup-engineering/http-services-section/representation";
 import { readingHtml } from "@red-cup-engineering/metroplat-operations-console/control-plane";
 import { guardOperators } from "@red-cup-engineering/metroplat-operations-console/people";
@@ -144,10 +145,21 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       const { id, sales } = pending();
       const own = sales.filter((sale) => sale.selfPaid);
       const unresolved = sales.filter((sale) => sale.payerClass === "unresolved");
-      const total = (list) => list.reduce((sum, sale) => sum + Number(sale.amount), 0).toFixed(3);
+      // A payment is dimensioned by its source denomination. Use the existing
+      // exact-number primitive, never Number or a guessed exchange conversion.
+      const totalsByUnit = (list) => {
+        const amountsByUnit = new Map();
+        for (const { amount, currency } of list) {
+          const amounts = amountsByUnit.get(currency) ?? [];
+          amounts.push(amount);
+          amountsByUnit.set(currency, amounts);
+        }
+        return [...amountsByUnit].sort(([a], [b]) => a.localeCompare(b))
+          .map(([currency, amounts]) => `${addDecimalStrings(amounts)} ${currency}`).join("; ");
+      };
       return [
         ...(sales.length === 0 || ruled(id) ? [] : [{ id, to: [accountHolder], title: `Decide whether to defer ${sales.length} payment-derived income entries`,
-          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${unresolved.length === 0 ? "" : `${unresolved.length} payer wallets (${total(unresolved)} ${unresolved[0].currency}) are not in the configured internal-wallet registry; their external/related-party status is unverified and delivery judgment is also missing. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
+          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${totalsByUnit(own)} ${own[0].currency}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${unresolved.length === 0 ? "" : `${unresolved.length} payer wallets (${totalsByUnit(unresolved)} ${unresolved[0].currency}) are not in the configured internal-wallet registry; their external/related-party status is unverified and delivery judgment is also missing. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
       ];
     },
     start(id) {
