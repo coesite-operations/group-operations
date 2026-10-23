@@ -231,7 +231,10 @@ test("custodian approval defers payment-derived income while preserving cash and
   books.finish(owed.id, memo, "approve");
   assert.deepEqual(books.obligations(), []);
   const ruling = JSON.parse(readFileSync(join(root, "web/records/rulings", `${owed.id}.json`), "utf8"));
-  const entries = reversalEntriesOf(x402SalesOf(ledger, registry), ruling);
+  assert.match(ruling.sourceEdition, /^[a-f0-9]{64}$/u);
+  assert.match(ruling.reviewedSalesDigest, /^[a-f0-9]{64}$/u);
+  const entries = reversalEntriesOf(x402SalesOf(ledger, registry), ruling,
+    { ledgerText: ledger, registryText: JSON.stringify(registry) });
   assert.equal(entries.length, 2);
   assert.match(entries[1], /Liabilities:Pending:X402-Receipts  -0.01 USDC/u);
   assert.doesNotMatch(entries.join("\n"), /handed_to:|Assets:Digital-Assets/);
@@ -239,4 +242,58 @@ test("custodian approval defers payment-derived income while preserving cash and
   appendFileSync(ledgerPath, `\n${entries.join("\n\n")}\n`);
   assert.deepEqual([...await bookedSourcesOf(ledgerPath)].sort(), ["evm:own", "evm:stranger"]);
   assert.deepEqual(x402SalesOf(readFileSync(ledgerPath, "utf8"), registry).length, 2);
+});
+
+test("postapproval reversals require exact reviewed book and wallet-registry editions", () => {
+  const root = mkdtempSync(join(tmpdir(), "books-ruling-edition-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "original-registry.json");
+  const original = sale("2026-10-23", STRANGER, "evm:received");
+  const originalRegistry = JSON.stringify({ wallets: [] });
+  writeFileSync(ledgerPath, original);
+  writeFileSync(registryPath, originalRegistry);
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath,
+      METROPLAT_WEB_DATA_DIR: join(root, "web") } });
+  const [due] = books.obligations();
+  const review = books.start(due.id);
+  assert.equal(books.finish(due.id, review.memo, "approve").title, "Reversal approved");
+  const ruling = JSON.parse(readFileSync(join(root, "web/records/rulings", due.id + ".json"), "utf8"));
+  assert.equal(ruling.sourceEdition, review.memo.sourceEdition);
+  assert.match(ruling.reviewedSalesDigest, /^[a-f0-9]{64}$/u);
+  assert.equal(ruling.handed[0], "evm:received",
+    "historical ruling identity and unresolved payer attribution are retained");
+  const projected = (ledgerText, registryText = originalRegistry, rows =
+    x402SalesOf(ledgerText, JSON.parse(registryText))) =>
+    reversalEntriesOf(rows, ruling, { ledgerText, registryText });
+  assert.equal(projected(original).length, 1,
+    "unchanged source generates exactly the reviewed pending-receipt reversal");
+  assert.throws(() => projected(original.replaceAll("0.01 USDC", "99.01 USDC")),
+    /source book or wallet registry edition changed/u,
+    "same source ID with a larger amount cannot inherit approval");
+  assert.throws(() => projected(original.replaceAll("USDC", "ETH")),
+    /source book or wallet registry edition changed/u,
+    "same source ID with a different denomination cannot inherit approval");
+  assert.throws(() => projected(original.replaceAll("0x", "0y")),
+    /source book or wallet registry edition changed/u,
+    "same source ID with a changed payer cannot inherit approval");
+  assert.throws(() => projected(original + "\n" + original),
+    /source book or wallet registry edition changed/u,
+    "duplicate posting must never generate two reversals under one approval");
+  assert.throws(() => projected(original, JSON.stringify({ wallets: [], revised: true })),
+    /source book or wallet registry edition changed/u,
+    "same payer classification with a changed registry edition requires review");
+  assert.throws(() => projected(original, originalRegistry,
+    [{ ...x402SalesOf(original, { wallets: [] })[0], amount: "9.99" }]),
+    /Reversal sales differ from the original source reading/u,
+    "caller cannot substitute its own projection for the reviewed source bytes");
+  assert.throws(() => reversalEntriesOf(x402SalesOf(original, { wallets: [] }),
+    { ...ruling, reviewedSalesDigest: undefined },
+    { ledgerText: original, registryText: originalRegistry }),
+    /Unfenced historical books ruling/u,
+    "legacy rulings remain on record but are not source-qualified posting authority");
+  writeFileSync(ledgerPath, original + "\n" + original);
+  assert.throws(() => books.obligations(), /Duplicate x402 source IDs/u,
+    "future bookkeeper review refuses ambiguous original source identities");
+  assert.equal(existsSync(ledgerPath), true);
 });
