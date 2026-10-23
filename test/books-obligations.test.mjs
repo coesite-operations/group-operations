@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -60,7 +60,9 @@ test("unknown x402 payer provenance never becomes an asserted external buyer", (
   const started = books.start(due.id);
   assert.match(started.steps.join("\n"), /origin is UNRESOLVED/u);
   assert.doesNotMatch(started.steps.join("\n"), /paid by an outside buyer/iu);
-  assert.deepEqual(started.memo, {
+  const { sourceEdition: firstEdition, ...firstMemoIdentity } = started.memo;
+  assert.match(firstEdition, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(firstMemoIdentity, {
     id: due.id, sales: ["evm:own"], handed: ["evm:stranger"],
   }, "old ruling field identities stay stable; 'handed' does not verify outsider status");
 
@@ -71,7 +73,9 @@ test("unknown x402 payer provenance never becomes an asserted external buyer", (
   const [emptyDue] = books.obligations();
   assert.ok(emptyDue, "no data in the registry is not a zero-income determination");
   const nowUnresolved = books.start(emptyDue.id);
-  assert.deepEqual(nowUnresolved.memo, {
+  const { sourceEdition: newEdition, ...nowMemoIdentity } = nowUnresolved.memo;
+  assert.notEqual(newEdition, firstEdition, "a source-registry edition must change with its bytes");
+  assert.deepEqual(nowMemoIdentity, {
     id: due.id, sales: [], handed: ["evm:own", "evm:stranger"],
   });
   assert.match(nowUnresolved.steps.join("\n"), /origin is UNRESOLVED/u);
@@ -103,9 +107,11 @@ test("bookkeeper readout retains source denominations and exact fractional amoun
   assert.match(due.why, /3 payer wallets \(1 USD; 2\.0004 USDC\)/u,
     "distinct units cannot be conflated, and sub-mill source amounts stay nonzero");
   assert.doesNotMatch(due.why, /3\.000 USD|0\.000 USDC/u);
-  assert.deepEqual(books.start(due.id).memo, {
-    id: due.id, sales: ["evm:own-exact"], handed: ["evm:usd", "evm:usdc", "evm:submill"],
-  }, "decision evidence must not mutate original source identities or payer classifications");
+  const receivedMemo = books.start(due.id).memo;
+  assert.match(receivedMemo.sourceEdition, /^[a-f0-9]{64}$/u);
+  assert.deepEqual([receivedMemo.id, receivedMemo.sales, receivedMemo.handed], [
+    due.id, ["evm:own-exact"], ["evm:usd", "evm:usdc", "evm:submill"],
+  ], "decision evidence must not mutate original source identities or payer classifications");
   assert.equal(readFileSync(ledgerPath, "utf8"), source);
 });
 
@@ -130,6 +136,35 @@ test("bookkeeper readout does not lose high-precision totals or admit malformed 
     "a malformed source amount is an explicit failure, not a fabricated zero or rounded sum");
 });
 
+test("unchanged event identity never authorizes stale bookkeeper decisions after source edits", () => {
+  const root = mkdtempSync(join(tmpdir(), "books-source-edition-"));
+  const ledgerPath = join(root, "source-ledger.beancount");
+  const registryPath = join(root, "source-wallets.json");
+  const source = sale("2026-10-23", STRANGER, "evm:stable-identity");
+  writeFileSync(ledgerPath, source);
+  writeFileSync(registryPath, JSON.stringify({ wallets: [] }));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath,
+      METROPLAT_WEB_DATA_DIR: join(root, "web") } });
+  const [due] = books.obligations();
+  const initial = books.start(due.id);
+  assert.match(initial.memo.sourceEdition, /^[a-f0-9]{64}$/u);
+  writeFileSync(ledgerPath, source.replaceAll("0.01 USDC", "99.01 USDC"));
+  assert.equal(books.obligations()[0].id, due.id,
+    "historical Work/ruling identity must survive source amount revision");
+  assert.throws(() => books.finish(due.id, initial.memo, "approve"),
+    /source book or wallet registry edition changed/u,
+    "amount change with same original event ID must refuse stale approval");
+  const newReview = books.start(due.id);
+  assert.notEqual(newReview.memo.sourceEdition, initial.memo.sourceEdition);
+  writeFileSync(registryPath, JSON.stringify({ wallets: [], additionalCoverage: "unverified" }));
+  assert.throws(() => books.finish(due.id, newReview.memo, "approve"),
+    /source book or wallet registry edition changed/u,
+    "a registry-source change must also invalidate its previous decision packet");
+  assert.equal(existsSync(join(root, "web/records/rulings", `${due.id}.json`)), false,
+    "no ruling should be written on either stale edition");
+});
+
 test("emsenn ownership needs no fictional custody ruling, and a forged books answer is rejected", () => {
   const root = mkdtempSync(join(tmpdir(), "swarm-books-"));
   const ledgerPath = join(root, "lib/emsenn/services/561-group/services/561-group-services-section/data/logs/ledgers/561-group-main-ledger.beancount");
@@ -149,7 +184,8 @@ test("emsenn ownership needs no fictional custody ruling, and a forged books ans
   assert.equal(due.length, 1);
   assert.match(due[0].title, /payment-derived income/);
   const { memo } = books.start(due[0].id);
-  assert.deepEqual(memo, { id: due[0].id, sales: ["evm:own"], handed: ["evm:stranger"] });
+  assert.match(memo.sourceEdition, /^[a-f0-9]{64}$/u);
+  assert.deepEqual([memo.id, memo.sales, memo.handed], [due[0].id, ["evm:own"], ["evm:stranger"]]);
   assert.throws(() => books.finish(due[0].id, { ...memo, sales: ["evm:stranger"] }, "approve"), /source payment identities/);
   const done = books.finish(due[0].id, memo, "approve");
   assert.equal(done.title, "Reversal approved");
