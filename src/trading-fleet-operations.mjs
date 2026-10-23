@@ -1,5 +1,6 @@
-import {join,isAbsolute} from 'node:path';
-import {runNodeJob} from '@red-cup-engineering/node-job-service';
+import {nodeJobsAt} from '@red-cup-engineering/node-job-service';
+import {nodeJobConfigurationsOf,nodeJobOperations} from '@red-cup-engineering/computer-system-engine/rpc/node-job-operations';
+import {FINANCIAL_FLEET_PULSE_JOB,selectFinancialFleetPulseDeployment} from './financial-fleet-job-selection.mjs';
 import {operation} from '@red-cup-engineering/computer-system-engine/rpc/operation';
 import {tradingFleetNetworkSources} from './trading-fleet-network.mjs';
 import {weatherNetworkSources,weatherTools} from './weather-network.mjs';
@@ -7,7 +8,7 @@ import {readFinancialFleetEvidence} from './financial-fleet-evidence.mjs';
 
 // Office commands and the network entrance consume the same venue custody
 // and admission path. Office standing grants access, never trading capital.
-export function tradingFleetOperations(){
+export function tradingFleetOperations(binding,installedOptions={}){
  const specs=[
   ['base-fleet-observe','base_fleet_observe',false],
   ['base-fleet-read-record','base_fleet_read_record',false],
@@ -30,5 +31,15 @@ export function tradingFleetOperations(){
    const [source]=tradingFleetNetworkSources({environment:process.env,config:{instance:{name:'561-financial-office'}}});
    try{return await source.client.call(tool,input??{});}finally{await source.client.close();}
   },
- })),operation({verb:'financial-fleet-pulse',inputFormat:'json',outputFormat:'json',summary:'Start or reuse the bounded financial fleet pulse from the running release. It observes venues, records research and runs the custody-bound Alpaca cycle. Existing venue mandates and validated decisions govern order effects; read outcomes through financial-fleet-evidence.',reads:['financial-fleet/observations'],writes:['financial-fleet/evidence'],effects:{class:'external',replay:'coordinated',coordination:'coordination-required',deterministic:'unmeasured',totality:'partial'},run:()=>{const artifact=process.env.GUIX_MACHINE_ARTIFACT;if(typeof artifact!=='string'||!isAbsolute(artifact))throw new TypeError('installed-machine-artifact-required');return runNodeJob({deploymentRoot:join(artifact,'deployments/cold-red-gate-host'),job:'financial-fleet-pulse'});}})]);
+ })),operation({verb:'financial-fleet-pulse',inputFormat:'json',outputFormat:'json',summary:'Start or reuse the bounded financial fleet pulse from the running release. It observes venues, records research and runs the custody-bound Alpaca cycle. Existing venue mandates and validated decisions govern order effects; read outcomes through financial-fleet-evidence.',reads:['financial-fleet/observations'],writes:['financial-fleet/evidence'],effects:{class:'external',replay:'coordinated',coordination:'coordination-required',deterministic:'unmeasured',totality:'partial'},run:()=>{
+  // Coesite's installed ModuleParameterization already binds the source-owned
+  // node-job deployment records. The original Systems/Code providers admit
+  // and execute the selected job; no hard-coded machine path, guessed host,
+  // independent scheduler or caller-supplied job/deployment is introduced.
+  const admitted=nodeJobConfigurationsOf(installedOptions.configuration);
+  const deployment=selectFinancialFleetPulseDeployment(admitted,configuration=>nodeJobsAt(configuration).jobs);
+  const nativeRunner=nodeJobOperations(binding,installedOptions).find(item=>item.verb==='node-job-run');
+  if(typeof nativeRunner?.execute!=='function')throw new TypeError('financial-fleet-pulse requires the original installed node-job-run operation');
+  return nativeRunner.execute({deployment,job:FINANCIAL_FLEET_PULSE_JOB});
+}})]);
 }

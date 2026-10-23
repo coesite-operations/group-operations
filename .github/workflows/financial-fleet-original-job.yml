@@ -1,0 +1,41 @@
+name: Original financial fleet job selection
+
+on:
+  pull_request:
+    paths:
+      - 'src/trading-fleet-operations.mjs'
+      - 'src/financial-fleet-job-selection.mjs'
+      - 'test/financial-fleet-job-selection.test.mjs'
+      - 'test/financial-fleet-original-provider.test.mjs'
+      - 'package.json'
+      - '.github/workflows/financial-fleet-original-job.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/trading-fleet-operations.mjs'
+      - 'src/financial-fleet-job-selection.mjs'
+      - 'test/financial-fleet-job-selection.test.mjs'
+      - 'test/financial-fleet-original-provider.test.mjs'
+      - 'package.json'
+      - '.github/workflows/financial-fleet-original-job.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  admitted-source-selection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse original Group provider and native installed-contract test
+        run: |
+          node --check src/trading-fleet-operations.mjs
+          node --check src/financial-fleet-job-selection.mjs
+          node --check test/financial-fleet-original-provider.test.mjs
+      - name: Run actual original-deployment selector with negative cases
+        run: npm run test:financial-fleet
