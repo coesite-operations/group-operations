@@ -17,6 +17,36 @@ const sale = (date, payer, id) => `${date} * "x402 revenue via translation"
 const ledger = [sale("2026-09-27", OWN, "evm:own"), sale("2026-09-28", STRANGER, "evm:stranger")].join("\n");
 const registry = { wallets: [{ address: OWN, owner: "org" }] };
 
+test("missing or ambiguous x402 source postings refuse financial completeness", () => {
+  const original = sale("2026-10-23", STRANGER, "evm:qualified");
+  const invalid = [
+    ["missing original source identity", original.replace('  source_id: "evm:qualified"\n', "")],
+    ["missing payer", original.replace('  payer: "' + STRANGER + '"\n', "")],
+    ["unreadable income amount", original.replace("-0.01 USDC", "-oops USDC")],
+    ["positive rather than source-sale income", original.replace("-0.01 USDC", "0.01 USDC")],
+    ["zero source-sale income", original.replace("-0.01 USDC", "-0.00 USDC")],
+    ["missing commodity", original.replace("-0.01 USDC", "-0.01")],
+    ["two income legs with no justified split", original + "  Income:Sales:X402:Other  -0.02 USDC\n"],
+  ];
+  for (const [caseName, malformed] of invalid) {
+    assert.throws(() => x402SalesOf(malformed, registry),
+      /Incomplete or ambiguous x402 sale posting/u, caseName);
+    assert.throws(() => x402SalesOf(original + "\n" + malformed, registry),
+      /Incomplete or ambiguous x402 sale posting/u,
+      caseName + ": one valid sale may not hide a second unreadable source event");
+  }
+  assert.deepEqual(x402SalesOf(original, registry).map(({ sourceId }) => sourceId), ["evm:qualified"],
+    "positive control: fully witnessed one-leg source sale stays observable");
+  const tiny = original.replaceAll("0.01 USDC", "0.0004 USDC");
+  assert.equal(x402SalesOf(tiny, registry)[0].amount, "0.0004",
+    "positive precision control: do not round away a sub-mill source quantity");
+  assert.deepEqual(x402SalesOf(original.replace("Income:Sales:X402:Translation", "Expenses:Office:Supplies"), registry), [],
+    "negative control: a non-x402 posting is not a sale");
+  assert.deepEqual(x402SalesOf(original.replace('  source_id: "evm:qualified"',
+    '  source_id: "evm:qualified"\n  reverses: "evm:previous"'), registry), [],
+    "negative control: historical reversal remains excluded");
+});
+
 test("the authored ledger's x402 sales are told apart: the Group paying itself is no sale", () => {
   assert.deepEqual(x402SalesOf(ledger, registry).map((item) => [item.sourceId, item.selfPaid]), [["evm:own", true], ["evm:stranger", false]]);
 });
