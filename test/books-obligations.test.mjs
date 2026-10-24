@@ -76,6 +76,28 @@ test("missing or ambiguous x402 source postings refuse financial completeness", 
     "negative control: historical reversal remains excluded");
 });
 
+test("replayed x402 event IDs refuse the original bookkeeper review", () => {
+  const replay = sale("2026-10-23", STRANGER, "evm:replayed")
+    + sale("2026-10-23", OWN, "evm:replayed");
+  assert.throws(() => x402SalesOf(replay, registry),
+    /Ambiguous legacy x402 sale source identity/u,
+    "two same-ID postings are not evidence of two independent sales");
+  const distinct = sale("2026-10-23", STRANGER, "evm:one")
+    + sale("2026-10-23", OWN, "evm:two");
+  assert.deepEqual(x402SalesOf(distinct, registry).map(x => x.sourceId),
+    ["evm:one", "evm:two"]);
+  const root = mkdtempSync(join(tmpdir(), "books-replayed-x402-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "original-registry.json");
+  writeFileSync(ledgerPath, replay);
+  writeFileSync(registryPath, JSON.stringify(registry));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath } });
+  assert.throws(() => books.obligations(),
+    /Ambiguous legacy x402 sale source identity/u,
+    "a downstream bookkeeper cannot receive double-counted source evidence");
+});
+
 test("the authored ledger's x402 sales are told apart: the Group paying itself is no sale", () => {
   assert.deepEqual(x402SalesOf(ledger, registry).map((item) => [item.sourceId, item.selfPaid]), [["evm:own", true], ["evm:stranger", false]]);
 });
