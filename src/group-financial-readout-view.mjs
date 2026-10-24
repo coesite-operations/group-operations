@@ -1,6 +1,8 @@
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { x402SalesOf, selfPaidSalesOf } from "@red-cup-engineering/x402-services-section/legacy-x402-booked-sales";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, linkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { addDecimalStrings } from "@red-cup-engineering/exact-number-data-service/decimal-string";
 import { htmlRepr } from "@red-cup-engineering/http-services-section/representation";
 import { readingHtml } from "@red-cup-engineering/metroplat-operations-console/control-plane";
 import { guardOperators } from "@red-cup-engineering/metroplat-operations-console/people";
@@ -61,23 +63,8 @@ export function currentGroupAcceptanceReadout(dataDir) {
 const LEDGER = ["lib", "emsenn", "services", "561-group", "services", "561-group-services-section", "data", "logs", "ledgers", "561-group-main-ledger.beancount"];
 const WALLET_REGISTRY = ["lib", "emsenn", "services", "561-group", "services", "engineering-services-section", "services", "computer-engineering-services-section", "services", "computer-systems-engineering-services-section", "services", "computer-blockchain-system-services-section", "services", "key-management-services-section", "data", "records", "2026-09-05-wallet-registry.json"];
 
-/**
- * The x402 sales the authored ledger books (the retired seller-booking route wrote them there), each
- * `{sourceId, date, payer, amount, currency, account, selfPaid}`: `selfPaid` when the wallet
- * registry identifies the payer as either founder (emsenn) or org (the agent swarm).\n * Both are within the 561 Group swarm economic perimeter, not external sales.
- */
-export function x402SalesOf(ledgerText, registry) {
-  const own = new Set((registry?.wallets ?? []).filter((wallet) => wallet.owner === "org" || wallet.owner === "founder").map((wallet) => String(wallet.address).toLowerCase()));
-  return ledgerText.split(/\n(?=\d{4}-\d\d-\d\d )/u).filter((block) => /^\d{4}-\d\d-\d\d \* /u.test(block) && /Income:Sales:X402/u.test(block) && !/^\s+reverses: /mu.test(block)).flatMap((block) => {
-    const payer = /payer: "([^"]+)"/u.exec(block)?.[1]?.toLowerCase();
-    const sourceId = /source_id: "([^"]+)"/u.exec(block)?.[1];
-    const income = /^\s+(Income:Sales:X402:\S+)\s+(-?[\d.]+) (\S+)/mu.exec(block);
-    return payer && sourceId && income ? [Object.freeze({ sourceId, date: block.slice(0, 10), payer, amount: income[2].replace(/^-/u, ""), currency: income[3], account: income[1], selfPaid: own.has(payer) })] : [];
-  });
-}
-
-/** Legacy booked sales paid by a wallet inside the emsenn/561 Group economic perimeter. */
-export const selfPaidSalesOf = (ledgerText, registry) => x402SalesOf(ledgerText, registry).filter((sale) => sale.selfPaid);
+/** Historic read-only book identities now come from Red Cup's source-owned x402 supplier. */
+export { x402SalesOf, selfPaidSalesOf };
 
 /**
  * Compatibility query for historical legal-owner disputes. An accounting
@@ -92,16 +79,58 @@ export function custodyDisagreementsOf(_ledgerText, _registry) {
   return [];
 }
 
+/** Edition of the exact original book and registry bytes reviewed by the custodian. */
+export function booksSourcesEditionOf(ledgerText, registryText) {
+  if (typeof ledgerText !== "string" || typeof registryText !== "string")
+    throw new TypeError("Reversal receiving requires original ledger and registry source bytes.");
+  return createHash("sha256").update(JSON.stringify([ledgerText, registryText])).digest("hex");
+}
+
+/** Stable source-qualified sale projection; detect duplicate or malformed original records. */
+function reviewedSaleDigestOf(sales) {
+  if (!Array.isArray(sales)) throw new TypeError("Reviewed sales must be an array.");
+  const columns = ["sourceId", "date", "payer", "amount", "currency", "account", "payerClass"];
+  const rows = sales.map((sale) => columns.map((column) => {
+    const value = sale?.[column];
+    if (typeof value !== "string" || value.length === 0)
+      throw new TypeError(`Reviewed x402 sale lacks ${column}.`);
+    return value;
+  }));
+  if (new Set(rows.map((row) => row[0])).size !== rows.length)
+    throw new Error("Duplicate x402 source IDs require source-book reconciliation.");
+  if (rows.some((row) => !/^[0-9]+(?:[.][0-9]+)?$/u.test(row[3])))
+    throw new TypeError("Reviewed x402 sale has a malformed decimal amount.");
+  rows.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+  return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+}
+
 /** A custodian-approved reclassification of legacy payment-derived income.
  * Retain the authored cash asset and transfer identity; hold the consideration
  * as pending receipts. Paying from outside the Group cannot establish acceptance.
  * No original authored entry is modified and no ruling is inferred from cash. */
-export function reversalEntriesOf(sales, ruling) {
+export function reversalEntriesOf(sales, ruling, { ledgerText, registryText } = {}) {
   if (ruling?.kind !== "561-group.books-ruling" || ruling.decision !== "approve") return [];
+  // Keep historical unfenced rulings as evidence, but never reinterpret their
+  // approvals as authority to reclassify an arbitrary later book edition.
+  if (typeof ruling.sourceEdition !== "string" || typeof ruling.reviewedSalesDigest !== "string")
+    throw new Error("Unfenced historical books ruling: manual source-qualified receiving required.");
+  if (booksSourcesEditionOf(ledgerText, registryText) !== ruling.sourceEdition)
+    throw new Error("The source book or wallet registry edition changed after the approved ruling.");
+  const observed = x402SalesOf(ledgerText, JSON.parse(registryText));
+  if (reviewedSaleDigestOf(observed) !== reviewedSaleDigestOf(sales))
+    throw new Error("Reversal sales differ from the original source reading.");
   const reversed = new Set(ruling.entries ?? []);
   const handed = new Set(ruling.handed ?? []);
+  if (reversed.size !== (ruling.entries ?? []).length ||
+      handed.size !== (ruling.handed ?? []).length ||
+      [...reversed].some((id) => handed.has(id)))
+    throw new Error("Approved ruling has duplicate or overlapping source identities.");
+  const selected = sales.filter((sale) => reversed.has(sale.sourceId) || handed.has(sale.sourceId));
+  if (selected.length !== reversed.size + handed.size ||
+      reviewedSaleDigestOf(selected) !== ruling.reviewedSalesDigest)
+    throw new Error("Approved ruling no longer matches the exact reviewed sales.");
   const date = String(ruling.at).slice(0, 10);
-  return sales.filter((sale) => reversed.has(sale.sourceId) || handed.has(sale.sourceId)).map((sale) => [
+  return selected.map((sale) => [
     `${date} * "reclassify payment-derived x402 income as pending cash"`,
     `  ruling: "${ruling.id}"`,
     `  reverses: "${sale.sourceId}"`,
@@ -127,9 +156,16 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
   if (typeof registryPath !== "string" || registryPath.trim() === "") throw new TypeError("GROUP_WALLET_REGISTRY must be a nonempty path");
   const rulings = env.METROPLAT_WEB_DATA_DIR ? join(env.METROPLAT_WEB_DATA_DIR, "records", "rulings") : undefined;
   const pending = () => {
-    const sales = x402SalesOf(readFileSync(ledgerPath, "utf8"), JSON.parse(readFileSync(registryPath, "utf8")));
+    const ledgerText = readFileSync(ledgerPath, "utf8");
+    const registryText = readFileSync(registryPath, "utf8");
+    const sales = x402SalesOf(ledgerText, JSON.parse(registryText));
     const id = `x402-sales-${createHash("sha256").update(sales.map((sale) => sale.sourceId).sort().join("\n")).digest("hex").slice(0, 16)}`;
-    return { id, sales };
+    // The identity-based Work/ruling key remains stable for historical custody.
+    // Separately fence approval to BOTH source editions: unchanged source IDs
+    // do not imply unchanged amounts, denomination, or registry evidence.
+    reviewedSaleDigestOf(sales); // refuse ambiguous or malformed source before the bookkeeper review
+    const edition = booksSourcesEditionOf(ledgerText, registryText);
+    return { id, sales, edition };
   };
   const ruled = (id) => rulings !== undefined && existsSync(join(rulings, `${id}.json`));
   return {
@@ -138,23 +174,36 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
     obligations() {
       const { id, sales } = pending();
       const own = sales.filter((sale) => sale.selfPaid);
-      const outside = sales.filter((sale) => !sale.selfPaid);
-      const total = (list) => list.reduce((sum, sale) => sum + Number(sale.amount), 0).toFixed(3);
+      const unresolved = sales.filter((sale) => sale.payerClass === "unresolved");
+      // A payment is dimensioned by its source denomination. Use the existing
+      // exact-number primitive, never Number or a guessed exchange conversion.
+      const totalsByUnit = (list) => {
+        const amountsByUnit = new Map();
+        for (const { amount, currency } of list) {
+          const amounts = amountsByUnit.get(currency) ?? [];
+          amounts.push(amount);
+          amountsByUnit.set(currency, amounts);
+        }
+        return [...amountsByUnit].sort(([a], [b]) => a.localeCompare(b))
+          .map(([currency, amounts]) => `${addDecimalStrings(amounts)} ${currency}`).join("; ");
+      };
       return [
         ...(sales.length === 0 || ruled(id) ? [] : [{ id, to: [accountHolder], title: `Decide whether to defer ${sales.length} payment-derived income entries`,
-          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${total(own)} ${own[0].currency}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${outside.length === 0 ? "" : `The ${outside.length} paid by other wallets (${total(outside)} ${outside[0].currency}) also lack a qualified delivery judgment. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
+          why: `The main ledger books ${sales.length} x402 payments as sales, written there by a route the house has retired. ${own.length === 0 ? "" : `${own.length} of them (${totalsByUnit(own)}) were paid by an emsenn/swarm wallet buying its own Bazaar listings; these are internal payments, not new outside sales. `}${unresolved.length === 0 ? "" : `${unresolved.length} payer wallets (${totalsByUnit(unresolved)}) are not in the configured internal-wallet registry; their external/related-party status is unverified and delivery judgment is also missing. `}Correcting the ledger is the book's custodian's decision; it takes one minute.` }]),
       ];
     },
     start(id) {
       const current = pending();
       if (current.id !== id) throw new Error("The ledger changed since this was listed. Go back and open it again.");
       const own = current.sales.filter((sale) => sale.selfPaid);
-      const outside = current.sales.filter((sale) => !sale.selfPaid);
+      const unresolved = current.sales.filter((sale) => sale.payerClass === "unresolved");
       return {
-        memo: { id, sales: own.map((sale) => sale.sourceId), handed: outside.map((sale) => sale.sourceId) },
+        // `handed` is retained as a historical ruling field; it does not
+        // certify that a payer outside the known internal registry is external.
+        memo: { id, sales: own.map((sale) => sale.sourceId), handed: unresolved.map((sale) => sale.sourceId), sourceEdition: current.edition },
         steps: [
           ...(own.length === 0 ? [] : [`${own.length} of the main ledger's x402 sales were paid by the Group's wallet ${own[0].payer}, which the house registry attributes to emsenn or the swarm, to buy its own listings so the x402 Bazaar would catalog them (receipts: x402-services-section/data/market-561-group/records/*bazaar-seeding-receipt.json). Approving reclassifies their income as pending receipts without changing the cash asset.`]),
-          ...(outside.length === 0 ? [] : [`${outside.length} were paid by an outside buyer (${[...new Set(outside.map((sale) => sale.payer))].join(", ")}). Approving reclassifies their income as pending receipts. Cash remains in the authored asset account; delivery and customer acceptance are unobserved.`]),
+          ...(unresolved.length === 0 ? [] : [`${unresolved.length} payments have payer wallets (${[...new Set(unresolved.map((sale) => sale.payer))].join(", ")}) absent from the configured internal registry. Their outside-versus-internal origin is UNRESOLVED, not a verified external buyer. Approving reclassifies their income as pending receipts. Cash remains in the authored asset account; delivery and customer acceptance are unobserved.`]),
           "Each reversal is dated today and cites your ruling. Nothing already booked is edited.",
           "Type approve, or decline to keep them as they are, and press the button.",
         ],
@@ -168,22 +217,38 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       if (current.id !== id) throw new Error("The ledger changed since this was listed. Go back and open it again.");
       if (ruled(id)) throw new Error("This was already answered. Go back to the list.");
       const own = current.sales.filter(sale => sale.selfPaid).map(sale => sale.sourceId).sort();
-      const outside = current.sales.filter(sale => !sale.selfPaid).map(sale => sale.sourceId).sort();
+      const unresolved = current.sales.filter(sale => sale.payerClass === "unresolved").map(sale => sale.sourceId).sort();
       const proposedOwn = [...(memo?.sales ?? [])].sort();
-      const proposedOutside = [...(memo?.handed ?? [])].sort();
+      const proposedUnresolved = [...(memo?.handed ?? [])].sort();
       if (JSON.stringify(own) !== JSON.stringify(proposedOwn) ||
-          JSON.stringify(outside) !== JSON.stringify(proposedOutside)) {
+          JSON.stringify(unresolved) !== JSON.stringify(proposedUnresolved)) {
         throw new Error("The source payment identities no longer match the received request.");
+      }
+      if (memo?.sourceEdition !== current.edition) {
+        throw new Error("The source book or wallet registry edition changed after this review was prepared.");
       }
       if (rulings === undefined) throw new Error("This node keeps no web data, so it cannot record the ruling.");
       mkdirSync(rulings, { recursive: true });
       const path = join(rulings, `${id}.json`);
-      const temporary = `${path}.${process.pid}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify({
+       const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+       try {
+         writeFileSync(temporary, `${JSON.stringify({
         kind: "561-group.books-ruling", id, decision, at: new Date().toISOString(),
-        by: accountHolder, entries: own, handed: outside,
-      }, null, 2)}\n`, { mode: 0o600 });
-      renameSync(temporary, path);
+        // Legacy `handed` denotes unresolved non-internal-registry entries,
+        // not evidence that their payer was external.
+        by: accountHolder, entries: own, handed: unresolved,
+        sourceEdition: current.edition, reviewedSalesDigest: reviewedSaleDigestOf(current.sales),
+      }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+         // Publishing with rename would overwrite a concurrently approved conflicting ruling.
+         // A same-directory hard link is atomic: the first bookkeeper ruling wins.
+         linkSync(temporary, path);
+       } catch (error) {
+         if (error?.code === "EEXIST" && existsSync(path))
+           throw new Error("A competing books ruling already exists; reread its decision.");
+         throw error;
+       } finally {
+         if (existsSync(temporary)) unlinkSync(temporary);
+       }
       return { title: decision === "approve" ? "Reversal approved" : "Kept as they are",
         content: decision === "approve" ? "Recorded. The reversing entries will be landed in the main ledger citing this ruling." : "Recorded. The entries stay as booked, and this will not be asked again for these entries." };
     },

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -17,6 +17,87 @@ const sale = (date, payer, id) => `${date} * "x402 revenue via translation"
 const ledger = [sale("2026-09-27", OWN, "evm:own"), sale("2026-09-28", STRANGER, "evm:stranger")].join("\n");
 const registry = { wallets: [{ address: OWN, owner: "org" }] };
 
+test("missing or ambiguous x402 source postings refuse financial completeness", () => {
+  const original = sale("2026-10-23", STRANGER, "evm:qualified");
+  const invalid = [
+    ["missing original source identity", original.replace('  source_id: "evm:qualified"\n', "")],
+    ["missing payer", original.replace('  payer: "' + STRANGER + '"\n', "")],
+    ["unreadable income amount", original.replace("-0.01 USDC", "-oops USDC")],
+    ["positive rather than source-sale income", original.replace("-0.01 USDC", "0.01 USDC")],
+    ["zero source-sale income", original.replace("-0.01 USDC", "-0.00 USDC")],
+    ["missing commodity", original.replace("-0.01 USDC", "-0.01")],
+    ["two income legs with no justified split", original + "  Income:Sales:X402:Other  -0.02 USDC\n"],
+    ["two conflicting source IDs", original.replace('  source_id: "evm:qualified"',
+      '  source_id: "evm:qualified"\n  source_id: "evm:shadow"')],
+    ["duplicate identical source ID", original.replace('  source_id: "evm:qualified"',
+      '  source_id: "evm:qualified"\n  source_id: "evm:qualified"')],
+    ["two conflicting payers", original.replace('  payer: "' + STRANGER + '"',
+      '  payer: "' + STRANGER + '"\n  payer: "0xshadow"')],
+    ["duplicate identical payer", original.replace('  payer: "' + STRANGER + '"',
+      '  payer: "' + STRANGER + '"\n  payer: "' + STRANGER + '"')],
+    ["source ID appears only in a comment", original.replace('  source_id: "evm:qualified"',
+      '# source_id: "evm:shadow"')],
+    ["payer appears only in a comment", original.replace('  payer: "' + STRANGER + '"',
+      '# payer: "' + STRANGER + '"')],
+    ["source ID exists only on posting metadata", original.replace('  source_id: "evm:qualified"', '')
+      .replace('  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC',
+        '  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC\n    source_id: "evm:posting"')],
+    ["payer exists only on posting metadata", original.replace('  payer: "' + STRANGER + '"', '')
+      .replace('  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC',
+        '  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC\n    payer: "0xposting"')],
+    ["malformed shadow source ID", original.replace('  source_id: "evm:qualified"',
+      '  source_id: "evm:qualified"\n  source_id: evm:shadow')],
+  ];
+  for (const [caseName, malformed] of invalid) {
+    assert.throws(() => x402SalesOf(malformed, registry),
+      /Incomplete or ambiguous x402 sale posting/u, caseName);
+    assert.throws(() => x402SalesOf(original + "\n" + malformed, registry),
+      /Incomplete or ambiguous x402 sale posting/u,
+      caseName + ": one valid sale may not hide a second unreadable source event");
+  }
+  assert.deepEqual(x402SalesOf(original, registry).map(({ sourceId }) => sourceId), ["evm:qualified"],
+    "positive control: fully witnessed one-leg source sale stays observable");
+  assert.deepEqual(x402SalesOf(original.replace('  source_id: "evm:qualified"',
+    '# source_id: "evm:shadow"\n  source_id: "evm:qualified"'), registry)
+    .map(({ sourceId }) => sourceId), ["evm:qualified"],
+    "non-authoritative comments cannot shadow exact transaction source identity");
+  const withPostingMetadata = original.replace('  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC',
+    '  Assets:Digital-Assets:EVM:Base:Tokens  0.01 USDC\n    source_id: "evm:posting"\n    payer: "0xposting"');
+  assert.deepEqual(x402SalesOf(withPostingMetadata, registry)
+    .map(({ sourceId, payer }) => [sourceId, payer]), [["evm:qualified", STRANGER]],
+    "posting-level annotations must not impersonate transaction identity");
+  const tiny = original.replaceAll("0.01 USDC", "0.0004 USDC");
+  assert.equal(x402SalesOf(tiny, registry)[0].amount, "0.0004",
+    "positive precision control: do not round away a sub-mill source quantity");
+  assert.deepEqual(x402SalesOf(original.replace("Income:Sales:X402:Translation", "Expenses:Office:Supplies"), registry), [],
+    "negative control: a non-x402 posting is not a sale");
+  assert.deepEqual(x402SalesOf(original.replace('  source_id: "evm:qualified"',
+    '  source_id: "evm:qualified"\n  reverses: "evm:previous"'), registry), [],
+    "negative control: historical reversal remains excluded");
+});
+
+test("replayed x402 event IDs refuse the original bookkeeper review", () => {
+  const replay = sale("2026-10-23", STRANGER, "evm:replayed")
+    + sale("2026-10-23", OWN, "evm:replayed");
+  assert.throws(() => x402SalesOf(replay, registry),
+    /Ambiguous legacy x402 sale source identity/u,
+    "two same-ID postings are not evidence of two independent sales");
+  const distinct = sale("2026-10-23", STRANGER, "evm:one")
+    + sale("2026-10-23", OWN, "evm:two");
+  assert.deepEqual(x402SalesOf(distinct, registry).map(x => x.sourceId),
+    ["evm:one", "evm:two"]);
+  const root = mkdtempSync(join(tmpdir(), "books-replayed-x402-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "original-registry.json");
+  writeFileSync(ledgerPath, replay);
+  writeFileSync(registryPath, JSON.stringify(registry));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath } });
+  assert.throws(() => books.obligations(),
+    /Ambiguous legacy x402 sale source identity/u,
+    "a downstream bookkeeper cannot receive double-counted source evidence");
+});
+
 test("the authored ledger's x402 sales are told apart: the Group paying itself is no sale", () => {
   assert.deepEqual(x402SalesOf(ledger, registry).map((item) => [item.sourceId, item.selfPaid]), [["evm:own", true], ["evm:stranger", false]]);
 });
@@ -28,6 +109,174 @@ test("emsenn founder and org wallets both count as internal to the swarm, but an
       ["evm:own", true], ["evm:stranger", false],
     ]);
   }
+});
+
+test("malformed Base payer and registry entries never impersonate an internal wallet", () => {
+  for (const [payer, wallet] of [
+    ["undefined", { owner: "org" }],
+    ["null", { owner: "founder", address: null }],
+    ["[object object]", { owner: "org", address: {} }],
+  ]) {
+    const malformed = sale("2026-10-23", payer, "evm:malformed-address");
+    assert.throws(() => x402SalesOf(malformed, { wallets: [wallet] }),
+      /Incomplete or ambiguous x402 sale posting/u,
+      "neither a coerced registry value nor an untyped payment payer is a wallet identity");
+    assert.throws(() => x402SalesOf(ledger + "\n" + malformed, { wallets: [wallet] }),
+      /Incomplete or ambiguous x402 sale posting/u,
+      "a valid sale must not hide one malformed payer in a bookkeeper reading");
+  }
+  assert.equal(x402SalesOf(sale("2026-10-23", OWN, "evm:real"),
+    { wallets: [{ owner: "founder", address: OWN.toUpperCase() }] })[0].payerClass,
+  "registered-internal", "typed mixed-case addresses retain positive internal attribution");
+  assert.equal(x402SalesOf(sale("2026-10-23", STRANGER, "evm:unknown"),
+    { wallets: [{ owner: "org" }] })[0].payerClass,
+  "unresolved", "a malformed internal registry row does not prove an outside origin");
+
+  const root = mkdtempSync(join(tmpdir(), "books-untyped-payer-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "wallet-registry.json");
+  writeFileSync(ledgerPath, ledger + "\n" + sale("2026-10-23", "undefined", "evm:invalid"));
+  writeFileSync(registryPath, JSON.stringify({ wallets: [{ owner: "org" }] }));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath } });
+  assert.throws(() => books.obligations(),
+    /Incomplete or ambiguous x402 sale posting/u,
+    "an actual bookkeeper consumer must refuse an incomplete mixed ledger");
+});
+
+test("unknown x402 payer provenance never becomes an asserted external buyer", () => {
+  const known = x402SalesOf(ledger, registry);
+  assert.deepEqual(known.map(x => [x.sourceId, x.selfPaid, x.payerClass]), [
+    ["evm:own", true, "registered-internal"],
+    ["evm:stranger", false, "unresolved"],
+  ], "known internal registration is positive-only, not an exhaustive external party census");
+
+  for (const incomplete of [undefined, { wallets: [] }, {
+    wallets: [{ address: STRANGER, owner: "external" }],
+  }]) {
+    assert.deepEqual(x402SalesOf(ledger, incomplete).map(x => x.payerClass),
+      ["unresolved", "unresolved"],
+      "missing registry and unsupported outside-owner labels cannot authenticate a third party");
+  }
+
+  const root = mkdtempSync(join(tmpdir(), "swarm-payer-unknown-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "incomplete-wallet-registry.json");
+  writeFileSync(ledgerPath, ledger);
+  writeFileSync(registryPath, JSON.stringify(registry));
+  const books = booksObligations({ accountHolder: "emsenn",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath,
+      GROUP_WALLET_REGISTRY: registryPath, METROPLAT_WEB_DATA_DIR: join(root, "web") } });
+  const [due] = books.obligations();
+  assert.ok(due, "the existing original bookkeeper review remains due");
+  assert.match(due.why, /external\/related-party status is unverified/u);
+  assert.doesNotMatch(due.why, /verified external buyer|paid by an outside buyer/iu);
+  const started = books.start(due.id);
+  assert.match(started.steps.join("\n"), /origin is UNRESOLVED/u);
+  assert.doesNotMatch(started.steps.join("\n"), /paid by an outside buyer/iu);
+  const { sourceEdition: firstEdition, ...firstMemoIdentity } = started.memo;
+  assert.match(firstEdition, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(firstMemoIdentity, {
+    id: due.id, sales: ["evm:own"], handed: ["evm:stranger"],
+  }, "old ruling field identities stay stable; 'handed' does not verify outsider status");
+
+  // A wallet-registry visibility change cannot reuse the old consent packet:
+  // the Work id is source-payment-stable, but the original pending class split
+  // must be re-assayed before a competent bookkeeper signs any new ruling.
+  writeFileSync(registryPath, JSON.stringify({ wallets: [] }));
+  const [emptyDue] = books.obligations();
+  assert.ok(emptyDue, "no data in the registry is not a zero-income determination");
+  const nowUnresolved = books.start(emptyDue.id);
+  const { sourceEdition: newEdition, ...nowMemoIdentity } = nowUnresolved.memo;
+  assert.notEqual(newEdition, firstEdition, "a source-registry edition must change with its bytes");
+  assert.deepEqual(nowMemoIdentity, {
+    id: due.id, sales: [], handed: ["evm:own", "evm:stranger"],
+  });
+  assert.match(nowUnresolved.steps.join("\n"), /origin is UNRESOLVED/u);
+  assert.throws(() => books.finish(due.id, started.memo, "approve"),
+    /source payment identities no longer match/u,
+    "stale positive-internal classification must not authorize a changed ruling");
+  assert.equal(readFileSync(ledgerPath, "utf8"), ledger,
+    "classification must not mutate the original book or create a financial posting");
+});
+
+test("bookkeeper readout retains source denominations and exact fractional amounts", () => {
+  const root = mkdtempSync(join(tmpdir(), "books-exact-units-"));
+  const ledgerPath = join(root, "source-ledger.beancount");
+  const registryPath = join(root, "source-wallets.json");
+  const priced = (date, payer, id, amount, currency) =>
+    sale(date, payer, id).replaceAll("0.01 USDC", `${amount} ${currency}`);
+  const source = [
+    priced("2026-10-20", OWN, "evm:own-exact", "1.250", "USDC"),
+    priced("2026-10-21", STRANGER, "evm:usd", "1.00", "USD"),
+    priced("2026-10-22", STRANGER, "evm:usdc", "2.00", "USDC"),
+    priced("2026-10-23", STRANGER, "evm:submill", "0.0004", "USDC"),
+  ].join("\n");
+  writeFileSync(ledgerPath, source);
+  writeFileSync(registryPath, JSON.stringify(registry));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath } });
+  const [due] = books.obligations();
+  assert.match(due.why, /1 of them \(1\.25 USDC\) were paid/u);
+  assert.match(due.why, /3 payer wallets \(1 USD; 2\.0004 USDC\)/u,
+    "distinct units cannot be conflated, and sub-mill source amounts stay nonzero");
+  assert.doesNotMatch(due.why, /3\.000 USD|0\.000 USDC/u);
+  const receivedMemo = books.start(due.id).memo;
+  assert.match(receivedMemo.sourceEdition, /^[a-f0-9]{64}$/u);
+  assert.deepEqual([receivedMemo.id, receivedMemo.sales, receivedMemo.handed], [
+    due.id, ["evm:own-exact"], ["evm:usd", "evm:usdc", "evm:submill"],
+  ], "decision evidence must not mutate original source identities or payer classifications");
+  assert.equal(readFileSync(ledgerPath, "utf8"), source);
+});
+
+test("bookkeeper readout does not lose high-precision totals or admit malformed numbers", () => {
+  const root = mkdtempSync(join(tmpdir(), "books-exact-large-"));
+  const ledgerPath = join(root, "source-ledger.beancount");
+  const registryPath = join(root, "source-wallets.json");
+  const priced = (id, amount) =>
+    sale("2026-10-23", STRANGER, id).replaceAll("0.01 USDC", `${amount} USD`);
+  const source = [
+    priced("evm:large", "9007199254740993.125"),
+    priced("evm:remainder", "0.875"),
+  ].join("\n");
+  writeFileSync(ledgerPath, source);
+  writeFileSync(registryPath, JSON.stringify({ wallets: [] }));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath } });
+  assert.match(books.obligations()[0].why, /9007199254740994 USD/u,
+    "the source-owned exact decimal arithmetic must not pass through IEEE-754 Number");
+  writeFileSync(ledgerPath, priced("evm:malformed", "1..0"));
+  assert.throws(() => books.obligations(), /Incomplete or ambiguous x402 sale posting/u,
+    "the original source parser must refuse malformed postings before exact-number aggregation");
+});
+
+test("unchanged event identity never authorizes stale bookkeeper decisions after source edits", () => {
+  const root = mkdtempSync(join(tmpdir(), "books-source-edition-"));
+  const ledgerPath = join(root, "source-ledger.beancount");
+  const registryPath = join(root, "source-wallets.json");
+  const source = sale("2026-10-23", STRANGER, "evm:stable-identity");
+  writeFileSync(ledgerPath, source);
+  writeFileSync(registryPath, JSON.stringify({ wallets: [] }));
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath,
+      METROPLAT_WEB_DATA_DIR: join(root, "web") } });
+  const [due] = books.obligations();
+  const initial = books.start(due.id);
+  assert.match(initial.memo.sourceEdition, /^[a-f0-9]{64}$/u);
+  writeFileSync(ledgerPath, source.replaceAll("0.01 USDC", "99.01 USDC"));
+  assert.equal(books.obligations()[0].id, due.id,
+    "historical Work/ruling identity must survive source amount revision");
+  assert.throws(() => books.finish(due.id, initial.memo, "approve"),
+    /source book or wallet registry edition changed/u,
+    "amount change with same original event ID must refuse stale approval");
+  const newReview = books.start(due.id);
+  assert.notEqual(newReview.memo.sourceEdition, initial.memo.sourceEdition);
+  writeFileSync(registryPath, JSON.stringify({ wallets: [], additionalCoverage: "unverified" }));
+  assert.throws(() => books.finish(due.id, newReview.memo, "approve"),
+    /source book or wallet registry edition changed/u,
+    "a registry-source change must also invalidate its previous decision packet");
+  assert.equal(existsSync(join(root, "web/records/rulings", `${due.id}.json`)), false,
+    "no ruling should be written on either stale edition");
 });
 
 test("emsenn ownership needs no fictional custody ruling, and a forged books answer is rejected", () => {
@@ -49,7 +298,8 @@ test("emsenn ownership needs no fictional custody ruling, and a forged books ans
   assert.equal(due.length, 1);
   assert.match(due[0].title, /payment-derived income/);
   const { memo } = books.start(due[0].id);
-  assert.deepEqual(memo, { id: due[0].id, sales: ["evm:own"], handed: ["evm:stranger"] });
+  assert.match(memo.sourceEdition, /^[a-f0-9]{64}$/u);
+  assert.deepEqual([memo.id, memo.sales, memo.handed], [due[0].id, ["evm:own"], ["evm:stranger"]]);
   assert.throws(() => books.finish(due[0].id, { ...memo, sales: ["evm:stranger"] }, "approve"), /source payment identities/);
   const done = books.finish(due[0].id, memo, "approve");
   assert.equal(done.title, "Reversal approved");
@@ -95,7 +345,10 @@ test("custodian approval defers payment-derived income while preserving cash and
   books.finish(owed.id, memo, "approve");
   assert.deepEqual(books.obligations(), []);
   const ruling = JSON.parse(readFileSync(join(root, "web/records/rulings", `${owed.id}.json`), "utf8"));
-  const entries = reversalEntriesOf(x402SalesOf(ledger, registry), ruling);
+  assert.match(ruling.sourceEdition, /^[a-f0-9]{64}$/u);
+  assert.match(ruling.reviewedSalesDigest, /^[a-f0-9]{64}$/u);
+  const entries = reversalEntriesOf(x402SalesOf(ledger, registry), ruling,
+    { ledgerText: ledger, registryText: JSON.stringify(registry) });
   assert.equal(entries.length, 2);
   assert.match(entries[1], /Liabilities:Pending:X402-Receipts  -0.01 USDC/u);
   assert.doesNotMatch(entries.join("\n"), /handed_to:|Assets:Digital-Assets/);
@@ -103,4 +356,58 @@ test("custodian approval defers payment-derived income while preserving cash and
   appendFileSync(ledgerPath, `\n${entries.join("\n\n")}\n`);
   assert.deepEqual([...await bookedSourcesOf(ledgerPath)].sort(), ["evm:own", "evm:stranger"]);
   assert.deepEqual(x402SalesOf(readFileSync(ledgerPath, "utf8"), registry).length, 2);
+});
+
+test("postapproval reversals require exact reviewed book and wallet-registry editions", () => {
+  const root = mkdtempSync(join(tmpdir(), "books-ruling-edition-"));
+  const ledgerPath = join(root, "original-ledger.beancount");
+  const registryPath = join(root, "original-registry.json");
+  const original = sale("2026-10-23", STRANGER, "evm:received");
+  const originalRegistry = JSON.stringify({ wallets: [] });
+  writeFileSync(ledgerPath, original);
+  writeFileSync(registryPath, originalRegistry);
+  const books = booksObligations({ accountHolder: "bookkeeper",
+    env: { METROPLAT_LEDGER_JOURNAL: ledgerPath, GROUP_WALLET_REGISTRY: registryPath,
+      METROPLAT_WEB_DATA_DIR: join(root, "web") } });
+  const [due] = books.obligations();
+  const review = books.start(due.id);
+  assert.equal(books.finish(due.id, review.memo, "approve").title, "Reversal approved");
+  const ruling = JSON.parse(readFileSync(join(root, "web/records/rulings", due.id + ".json"), "utf8"));
+  assert.equal(ruling.sourceEdition, review.memo.sourceEdition);
+  assert.match(ruling.reviewedSalesDigest, /^[a-f0-9]{64}$/u);
+  assert.equal(ruling.handed[0], "evm:received",
+    "historical ruling identity and unresolved payer attribution are retained");
+  const projected = (ledgerText, registryText = originalRegistry, rows =
+    x402SalesOf(ledgerText, JSON.parse(registryText))) =>
+    reversalEntriesOf(rows, ruling, { ledgerText, registryText });
+  assert.equal(projected(original).length, 1,
+    "unchanged source generates exactly the reviewed pending-receipt reversal");
+  assert.throws(() => projected(original.replaceAll("0.01 USDC", "99.01 USDC")),
+    /source book or wallet registry edition changed/u,
+    "same source ID with a larger amount cannot inherit approval");
+  assert.throws(() => projected(original.replaceAll("USDC", "ETH")),
+    /source book or wallet registry edition changed/u,
+    "same source ID with a different denomination cannot inherit approval");
+  assert.throws(() => projected(original.replaceAll("0x", "0y")),
+    /source book or wallet registry edition changed/u,
+    "same source ID with a changed payer cannot inherit approval");
+  assert.throws(() => projected(original + "\n" + original),
+    /source book or wallet registry edition changed/u,
+    "duplicate posting must never generate two reversals under one approval");
+  assert.throws(() => projected(original, JSON.stringify({ wallets: [], revised: true })),
+    /source book or wallet registry edition changed/u,
+    "same payer classification with a changed registry edition requires review");
+  assert.throws(() => projected(original, originalRegistry,
+    [{ ...x402SalesOf(original, { wallets: [] })[0], amount: "9.99" }]),
+    /Reversal sales differ from the original source reading/u,
+    "caller cannot substitute its own projection for the reviewed source bytes");
+  assert.throws(() => reversalEntriesOf(x402SalesOf(original, { wallets: [] }),
+    { ...ruling, reviewedSalesDigest: undefined },
+    { ledgerText: original, registryText: originalRegistry }),
+    /Unfenced historical books ruling/u,
+    "legacy rulings remain on record but are not source-qualified posting authority");
+  writeFileSync(ledgerPath, original + "\n" + original);
+  assert.throws(() => books.obligations(), /Duplicate x402 source IDs/u,
+    "future bookkeeper review refuses ambiguous original source identities");
+  assert.equal(existsSync(ledgerPath), true);
 });
