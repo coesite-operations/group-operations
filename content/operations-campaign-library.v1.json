@@ -270,12 +270,19 @@
         {
           "id": "choose-channels",
           "ownerOffice": "configured-distribution-steward",
-          "effect": "Compare original owned, RSS/ActivityPub, qualified public or opted-in outreach and context-only house ad channels with correct existing installed providers; do not invent consent, followers, ad publishers or signed offers."
+          "effect": "Compare original owned, RSS/ActivityPub, qualified public or opted-in outreach and context-only house ad channels with correct existing installed providers; do not invent consent, followers, ad publishers or signed offers.",
+          "after": [
+            "form-message"
+          ]
         },
         {
           "id": "approve-effect",
           "ownerOffice": "configured-authorized-publisher",
-          "effect": "Require exact authenticated channel/identity permission, current consumer grant, privacy/consent and jurisdiction, optional explicit capped paid-spend approval when actually spending; no unauthorized external publication, cold contact or billing."
+          "effect": "Require exact authenticated channel/identity permission, current consumer grant, privacy/consent and jurisdiction, optional explicit capped paid-spend approval when actually spending; no unauthorized external publication, cold contact or billing.",
+          "after": [
+            "independent-review",
+            "choose-channels"
+          ]
         },
         {
           "id": "publish",
