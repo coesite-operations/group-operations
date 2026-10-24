@@ -1,6 +1,6 @@
 import { x402SalesOf, selfPaidSalesOf } from "@red-cup-engineering/x402-services-section/legacy-x402-booked-sales";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, linkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addDecimalStrings } from "@red-cup-engineering/exact-number-data-service/decimal-string";
 import { htmlRepr } from "@red-cup-engineering/http-services-section/representation";
@@ -230,15 +230,25 @@ export function booksObligations({ accountHolder, repositoryRoot, env = process.
       if (rulings === undefined) throw new Error("This node keeps no web data, so it cannot record the ruling.");
       mkdirSync(rulings, { recursive: true });
       const path = join(rulings, `${id}.json`);
-      const temporary = `${path}.${process.pid}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify({
+       const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+       try {
+         writeFileSync(temporary, `${JSON.stringify({
         kind: "561-group.books-ruling", id, decision, at: new Date().toISOString(),
         // Legacy `handed` denotes unresolved non-internal-registry entries,
         // not evidence that their payer was external.
         by: accountHolder, entries: own, handed: unresolved,
         sourceEdition: current.edition, reviewedSalesDigest: reviewedSaleDigestOf(current.sales),
-      }, null, 2)}\n`, { mode: 0o600 });
-      renameSync(temporary, path);
+      }, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+         // Publishing with rename would overwrite a concurrently approved conflicting ruling.
+         // A same-directory hard link is atomic: the first bookkeeper ruling wins.
+         linkSync(temporary, path);
+       } catch (error) {
+         if (error?.code === "EEXIST" && existsSync(path))
+           throw new Error("A competing books ruling already exists; reread its decision.");
+         throw error;
+       } finally {
+         if (existsSync(temporary)) unlinkSync(temporary);
+       }
       return { title: decision === "approve" ? "Reversal approved" : "Kept as they are",
         content: decision === "approve" ? "Recorded. The reversing entries will be landed in the main ledger citing this ruling." : "Recorded. The entries stay as booked, and this will not be asked again for these entries." };
     },
