@@ -1,3 +1,4 @@
+import { x402SalesOf, selfPaidSalesOf } from "@red-cup-engineering/x402-services-section/legacy-x402-booked-sales";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -62,56 +63,8 @@ export function currentGroupAcceptanceReadout(dataDir) {
 const LEDGER = ["lib", "emsenn", "services", "561-group", "services", "561-group-services-section", "data", "logs", "ledgers", "561-group-main-ledger.beancount"];
 const WALLET_REGISTRY = ["lib", "emsenn", "services", "561-group", "services", "engineering-services-section", "services", "computer-engineering-services-section", "services", "computer-systems-engineering-services-section", "services", "computer-blockchain-system-services-section", "services", "key-management-services-section", "data", "records", "2026-09-05-wallet-registry.json"];
 
-/**
- * The x402 sales the authored ledger books (the retired seller-booking route wrote them there), each
- * `{sourceId, date, payer, amount, currency, account, selfPaid, payerClass}`. A payer
- * listed as founder/org in the configured internal-wallet registry is `registered-internal`.
- * Absence from that registry is `unresolved`, NOT evidence of an external customer;
- * the original payment/commerce witness alone can qualify outside-party status.
- */
-export function x402SalesOf(ledgerText, registry) {
-  // This legacy x402 book records Base/EVM payer addresses. Only a typed
-  // address can witness registration: String(undefined) and String(null) cannot.
-  const evmAddress = (value) => typeof value === "string" && /^0x[a-f0-9]{40}$/iu.test(value);
-  const own = new Set((registry?.wallets ?? [])
-    .filter((wallet) => (wallet?.owner === "org" || wallet?.owner === "founder") && evmAddress(wallet.address))
-    .map((wallet) => wallet.address.toLowerCase()));
-  return ledgerText.split(/\n(?=\d{4}-\d\d-\d\d )/u).filter((block) =>
-    /^\d{4}-\d\d-\d\d \* /u.test(block) &&
-    /^[ \t]+Income:Sales:X402(?::\S+)?(?:\s|$)/mu.test(block) &&
-    !/^[ \t]+reverses: /mu.test(block)).map((block) => {
-    // Transaction-level metadata precedes postings. Never treat comments or
-    // posting-level metadata as the source witness of a financial event.
-    const lines = block.split("\n");
-    const firstPosting = lines.findIndex((line) =>
-      /^[ \t]+(?:Assets|Liabilities|Equity|Income|Expenses):/u.test(line));
-    const header = lines.slice(1, firstPosting < 0 ? lines.length : firstPosting);
-    const payerLines = header.filter((line) => /^[ \t]+payer:/u.test(line));
-    const sourceIdLines = header.filter((line) => /^[ \t]+source_id:/u.test(line));
-    const payer = payerLines.length === 1
-      ? /^[ \t]+payer:[ \t]+"([^"\n]+)"[ \t]*$/u.exec(payerLines[0])?.[1]?.toLowerCase()
-      : undefined;
-    const sourceId = sourceIdLines.length === 1
-      ? /^[ \t]+source_id:[ \t]+"([^"\n]+)"[ \t]*$/u.exec(sourceIdLines[0])?.[1]
-      : undefined;
-    // An omitted or unreadable original posting is UNKNOWN, never a zero sale.
-    // Require exactly one unambiguous historical X402 income leg per sale.
-    const postings = block.split("\n").map((line) => line.trim())
-      .filter((line) => /^Income:Sales:X402(?::\S+)?(?:\s|$)/u.test(line));
-    const income = postings.length === 1
-      ? /^(Income:Sales:X402:\S+)[ \t]+(-[0-9]+(?:\.[0-9]+)?)[ \t]+([A-Z][A-Z0-9._-]*)$/u.exec(postings[0])
-      : null;
-    if (!payer || !evmAddress(payer) || !sourceId || !income || !/[1-9]/u.test(income[2]))
-      throw new Error("Incomplete or ambiguous x402 sale posting: source ID, payer, one nonzero negative income leg and denomination required.");
-    const registeredInternal = own.has(payer);
-    return Object.freeze({ sourceId, date: block.slice(0, 10), payer, amount: income[2].slice(1),
-      currency: income[3], account: income[1], selfPaid: registeredInternal,
-      payerClass: registeredInternal ? "registered-internal" : "unresolved" });
-  });
-}
-
-/** Legacy booked sales paid by a wallet inside the emsenn/561 Group economic perimeter. */
-export const selfPaidSalesOf = (ledgerText, registry) => x402SalesOf(ledgerText, registry).filter((sale) => sale.selfPaid);
+/** Historic read-only book identities now come from Red Cup's source-owned x402 supplier. */
+export { x402SalesOf, selfPaidSalesOf };
 
 /**
  * Compatibility query for historical legal-owner disputes. An accounting
