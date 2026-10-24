@@ -3,7 +3,7 @@ name: operations-custody
 # This repository is a Coesite Operations section. It holds the data (lib/agency, content, data) that
 # Red Cup Engineering software reads, never executable source. The 561 Group's rule:
 # https://github.com/561-group/561-group-services-section/blob/main/lib/agency/rules/science-engineering-operations-parameterize-in-order.json
-# This check fails any push or pull request that adds or changes executable source outside legacy/.
+# This check fails any push or pull request that adds or changes executable source.
 
 on:
   pull_request:
@@ -31,7 +31,7 @@ jobs:
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then exit 0; fi
           code=$(git diff --name-only --diff-filter=AMR "$BASE" "$HEAD" \
             | grep -E '\.(mjs|cjs|js|jsx|mts|cts|ts|tsx|py|sh|bash|rb|go|rs|scm|el|lua|php|pl)$' \
-            | grep -Ev '(^|/)(legacy|node_modules)/' || true)
+            | grep -Ev '(^|/)node_modules/' || true)
           if [ -n "$code" ]; then
             echo "files<<EOF" >> "$GITHUB_OUTPUT"; echo "$code" >> "$GITHUB_OUTPUT"; echo "EOF" >> "$GITHUB_OUTPUT"
             echo "$code" | while read -r f; do echo "::error file=$f::Executable source in an Operations section. Build it at its Red Cup Engineering owner and name it from this section's data."; done
